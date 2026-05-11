@@ -1414,16 +1414,16 @@ function detCostos(o) {
   const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
   const cd = linkedQuote?.costoDetalle || null
   const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : 0
-  // seguro = (fob + flete) * seguro_pct — stored implicitly in cd via total_locales
-  // We need to reconstruct: landed = fob + flete + seguro + trib + locales + fee + iva_fee
-  // The calculadora already computes CIF = fob + flete + seguro, and trib/locales/fee on top
-  // So: full landed = fob + flete + cd.total_trib + cd.total_locales + cd.total_fee + cd.iva_fee
-  const fullLanded = cd ? (fob + flete + (cd.total_trib||0) + (cd.total_locales||0) + (cd.total_fee||0) + (cd.iva_fee||0)) : landed
+  // landedTotal stored in quote already includes fob+flete+seguro+trib+locales+fee
+  const fullLanded = cd ? (Number(linkedQuote.landedTotal)||0) : landed
 
   return `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <div style="font-size:12px;color:var(--text2)">${linkedQuote?`Vinculado al presupuesto <strong>${linkedQuote.code}</strong>`:'Sin presupuesto vinculado'}</div>
-    <button class="btn btn-primary btn-sm" onclick="openCostoModal('${o.id}')">+ Agregar costo extra</button>
+    <div style="display:flex;gap:6px">
+      ${cd?`<button class="btn btn-sm" onclick="openEditCostosModal('${o.id}')">✏️ Editar costos</button>`:''}
+      <button class="btn btn-primary btn-sm" onclick="openCostoModal('${o.id}')">+ Agregar costo extra</button>
+    </div>
   </div>
 
   <!-- KPI STRIP -->
@@ -2349,36 +2349,125 @@ function openQuotePagoModal(quoteId) {
    SUPPLIERS
 ════════════════════════════════════ */
 function renderSuppliers() {
-  const supps=getSuppliers()
-  const orders=getOrders()
-  return `<div class="entity-grid">
-    ${supps.map(s=>{
-      const init=s.nombre.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
-      const sOrders=orders.filter(o=>o.proveedor===s.nombre)
-      const sFOB=sOrders.reduce((sum,o)=>sum+(Number(o.fob_total)||0),0)
-      return `<div class="card entity-card">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <div class="entity-avatar" style="background:var(--purple-bg);color:var(--purple-t)">${init}</div>
-          <div><div style="font-weight:700;font-size:14px">${s.nombre}</div><div style="font-size:11px;color:var(--text3)">${s.ciudad||'—'}</div></div>
+  const supps = getSuppliers()
+  const orders = getOrders()
+  const cats = getSupplierCats()
+  return `
+  <div style="display:flex;gap:12px;align-items:start">
+    <div style="flex:1">
+      <div class="entity-grid">
+        ${supps.map(s=>{
+          const init = s.nombre.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
+          const sOrders = orders.filter(o=>o.proveedor===s.nombre)
+          const sFOB = sOrders.reduce((sum,o)=>sum+(Number(o.fob_total)||0),0)
+          return `<div class="card">
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+              <div class="entity-avatar" style="background:var(--purple-bg);color:var(--purple-t)">${init}</div>
+              <div style="flex:1"><div style="font-weight:700;font-size:14px">${s.nombre}</div><div style="font-size:11px;color:var(--text3)">${s.ciudad||'—'}</div></div>
+              <button class="btn btn-ghost btn-xs" onclick="editSupplier('${s.id}')">✏️</button>
+            </div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:3px">Cat: ${s.cat||'—'} · Lead time: ${s.leadtime?s.leadtime+'d':'—'}</div>
+            <div style="font-size:12px;color:var(--text2)">${sOrders.length} órdenes · ${fmtUSD(sFOB)}</div>
+          </div>`}).join('')}
+        <div class="card entity-add" onclick="openSupplierModal()">
+          <span style="font-size:26px">🏭</span>
+          <span style="font-size:13px;font-weight:600">Agregar proveedor</span>
         </div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">Cat: ${s.cat||'—'} · Lead time: ${s.leadtime?s.leadtime+'d':'—'}</div>
-        <div style="font-size:12px;color:var(--text2)">${sOrders.length} órdenes · ${fmtUSD(sFOB)}</div>
-      </div>`}).join('')}
-    <div class="card entity-add" onclick="openModal('modal-supplier')">
-      <span style="font-size:26px">🏭</span>
-      <span style="font-size:13px;font-weight:600">Agregar proveedor</span>
+      </div>
+    </div>
+
+    <!-- CATEGORÍAS -->
+    <div class="card" style="width:220px;flex-shrink:0">
+      <div class="flex-between mb10">
+        <span class="section-title" style="font-size:13px">Categorías</span>
+      </div>
+      ${cats.map((cat,i)=>`
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="flex:1;font-size:13px">${cat}</span>
+        <button class="btn btn-ghost btn-xs" onclick="editSupplierCat(${i},'${cat}')">✏️</button>
+        <button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteSupplierCat(${i})">✕</button>
+      </div>`).join('')}
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input class="input" id="new-cat-input" placeholder="Nueva categoría..." style="font-size:12px;flex:1"/>
+        <button class="btn btn-primary btn-sm" onclick="addSupplierCat()">+</button>
+      </div>
     </div>
   </div>`
 }
 
+function addSupplierCat() {
+  const input = document.getElementById('new-cat-input')
+  const val = input?.value.trim()
+  if (!val) return
+  const cats = getSupplierCats()
+  if (cats.includes(val)) { toast('Ya existe esa categoría'); return }
+  cats.push(val)
+  saveSupplierCats(cats)
+  input.value = ''
+  toast('Categoría agregada')
+  renderPage()
+}
+
+function deleteSupplierCat(i) {
+  const cats = getSupplierCats()
+  if (!confirm(`¿Eliminar la categoría "${cats[i]}"?`)) return
+  cats.splice(i, 1)
+  saveSupplierCats(cats)
+  renderPage()
+}
+
+function editSupplierCat(i, current) {
+  const nuevo = prompt('Nuevo nombre para la categoría:', current)
+  if (!nuevo || nuevo === current) return
+  const cats = getSupplierCats()
+  cats[i] = nuevo.trim()
+  saveSupplierCats(cats)
+  renderPage()
+}
+
+function openSupplierModal(existing) {
+  const cats = getSupplierCats()
+  document.getElementById('s-nombre').value = existing?.nombre || ''
+  document.getElementById('s-ciudad').value = existing?.ciudad || ''
+  document.getElementById('s-lead').value = existing?.leadtime || ''
+  document.getElementById('s-contacto').value = existing?.contacto || ''
+  document.getElementById('s-email').value = existing?.email || ''
+  // Update category dropdown with dynamic cats
+  document.getElementById('s-cat').innerHTML = cats.map(c=>`<option ${existing?.cat===c?'selected':''}>${c}</option>`).join('')
+  document.getElementById('s-cat').value = existing?.cat || cats[0]
+  document.getElementById('modal-supplier')._editId = existing?.id || null
+  openModal('modal-supplier')
+}
+
+function editSupplier(id) {
+  const s = getSuppliers().find(x=>x.id===id)
+  if (s) openSupplierModal(s)
+}
+
 function saveSupplier() {
-  const nombre=document.getElementById('s-nombre').value.trim()
-  if(!nombre) return alert('El nombre es requerido')
-  const supps=getSuppliers()
-  supps.push({ id:uid(), nombre, ciudad:document.getElementById('s-ciudad').value, cat:document.getElementById('s-cat').value, leadtime:Number(document.getElementById('s-lead').value)||0, contacto:document.getElementById('s-contacto').value, email:document.getElementById('s-email').value })
-  saveSuppliers(supps); closeModal('modal-supplier')
-  document.getElementById('s-nombre').value=''
-  toast('Proveedor guardado'); renderPage()
+  const nombre = document.getElementById('s-nombre').value.trim()
+  if (!nombre) return alert('El nombre es requerido')
+  const supps = getSuppliers()
+  const editId = document.getElementById('modal-supplier')._editId
+  const data = {
+    nombre,
+    ciudad: document.getElementById('s-ciudad').value,
+    cat: document.getElementById('s-cat').value,
+    leadtime: Number(document.getElementById('s-lead').value)||0,
+    contacto: document.getElementById('s-contacto').value,
+    email: document.getElementById('s-email').value
+  }
+  if (editId) {
+    const idx = supps.findIndex(s=>s.id===editId)
+    if (idx>=0) supps[idx] = { ...supps[idx], ...data }
+  } else {
+    supps.push({ id: uid(), ...data })
+  }
+  saveSuppliers(supps)
+  closeModal('modal-supplier')
+  document.getElementById('s-nombre').value = ''
+  toast(editId ? 'Proveedor actualizado ✓' : 'Proveedor guardado ✓')
+  renderPage()
 }
 
 /* ════════════════════════════════════
@@ -2470,7 +2559,7 @@ function getCalcSaves() { return DB.get('calc_saves2') || [] }
 function saveCalcSaves(a) { DB.set('calc_saves2', a) }
 
 // Core landed cost math — takes total FOB and shared costs
-function computeLanded(fob, flete, cfg, modulo) {
+function computeLanded(fob, flete, cfg, modulo, paraMi = false) {
   const seguro = (fob + flete) * (cfg.seguro_pct / 100)
   const cif = fob + flete + seguro
   const banco_ext = fob * (cfg.gasto_banco_ext_pct / 100)
@@ -2483,32 +2572,29 @@ function computeLanded(fob, flete, cfg, modulo) {
   const iibb = base_amp * (cfg.iibb_pct / 100)
   const total_trib = di + te + iva + iva_ad + ganancias + iibb
   const total_locales = cfg.despachante + cfg.thc_bl + cfg.almacenaje + cfg.swift_local + cfg.flete_interno + banco_ext
-  const fee_fijo = modulo === 'A' ? cfg.fee_fijo_a : cfg.fee_fijo_b
-  const fee_pct_val = fob * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
+  // In para_mi mode, no fee
+  const fee_fijo = paraMi ? 0 : (modulo === 'A' ? cfg.fee_fijo_a : cfg.fee_fijo_b)
+  const fee_pct_val = paraMi ? 0 : fob * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
   const total_fee = fee_fijo + fee_pct_val
-  const iva_fee = total_fee * (cfg.iva_fee_pct / 100)
+  const iva_fee = paraMi ? 0 : total_fee * (cfg.iva_fee_pct / 100)
+  // landed = cif already includes flete + seguro
   const landed = cif + total_trib + total_locales + total_fee + iva_fee
-  return { seguro, cif, banco_ext, di, te, base_amp, iva, iva_ad, ganancias, iibb,
+  return { seguro, cif, flete, banco_ext, di, te, base_amp, iva, iva_ad, ganancias, iibb,
            total_trib, total_locales, fee_fijo, fee_pct_val, total_fee, iva_fee, landed }
 }
 
 // Distribute shared costs proportionally to each product by FOB weight
-function calcProductLanded(products, flete, cfg, modulo) {
+function calcProductLanded(products, flete, cfg, modulo, paraMi = false) {
   const fobTotal = products.reduce((s, p) => s + (p.qty||0)*(p.fob||0), 0)
-  if (!fobTotal) return products.map(p => ({ ...p, landed_unit: 0, landed_total: 0, multiplo: 0 }))
-  const totals = computeLanded(fobTotal, flete, cfg, modulo)
-  const overheadPerFob = (totals.landed - fobTotal) / fobTotal // ratio of overhead to FOB
+  if (!fobTotal) return products.map(p => ({ ...p, landedUnit: 0, landedTotal: 0, multiplo: 0 }))
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
+  const overheadPerFob = (totals.landed - fobTotal) / fobTotal
 
   return products.map(p => {
     const pFob = (p.qty||0) * (p.fob||0)
-    const pWeight = fobTotal ? pFob / fobTotal : 0
-    const pOverhead = totals.landed * pWeight - pFob * pWeight  // proportional overhead
-    // landed per unit = fob + proportional share of all overhead / qty
     const landedTotal = pFob + pFob * overheadPerFob
     const landedUnit = (p.qty||0) > 0 ? landedTotal / p.qty : 0
-    const markup = Number(p.markup) || 0
-    const precioVenta = landedUnit * (1 + markup / 100)
-    return { ...p, pFob, pWeight, landedTotal, landedUnit, precioVenta, multiplo: pFob > 0 ? landedTotal/pFob : 0 }
+    return { ...p, pFob, landedTotal, landedUnit, precioVenta: landedUnit, multiplo: pFob > 0 ? landedTotal/pFob : 0 }
   })
 }
 
@@ -2534,13 +2620,18 @@ function renderCalc() {
         <button class="btn btn-primary btn-sm" onclick="openSaveAsQuote()">📋 Guardar como presupuesto</button>
       </div>
     </div>
+    <!-- MODO TOGGLE -->
+    <div style="display:flex;gap:0;background:var(--surface2);border-radius:var(--r);padding:3px;margin-bottom:12px;width:fit-content">
+      <button id="btn-para-cliente" class="btn btn-primary btn-sm" style="border-radius:5px" onclick="setCalcMode('cliente')">Para cliente</button>
+      <button id="btn-para-mi" class="btn btn-ghost btn-sm" style="border-radius:5px" onclick="setCalcMode('mi')">Para mí (sin fee)</button>
+    </div>
     <div class="form-row mb10">
       <div class="form-group">
         <label class="label">Flete internacional total (USD)</label>
         <input class="input mono" type="number" id="c2_flete" min="0" step="1" placeholder="2500" oninput="recalcAll()" value=""/>
         <span class="form-hint">Se distribuye proporcionalmente entre productos</span>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="modulo-group">
         <label class="label">Módulo de servicio</label>
         <select class="select" id="c2_modulo" onchange="recalcAll()">
           <option value="A">Módulo A — Llave en mano</option>
@@ -2558,14 +2649,12 @@ function renderCalc() {
     </div>
 
     <!-- Header -->
-    <div style="display:grid;grid-template-columns:2fr 80px 90px 70px 100px 110px 110px 32px;gap:6px;margin-bottom:6px;padding:0 2px">
+    <div style="display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;margin-bottom:6px;padding:0 2px">
       <span class="label" style="margin:0">Descripción</span>
       <span class="label" style="margin:0">Cantidad</span>
       <span class="label" style="margin:0">FOB unit.</span>
-      <span class="label" style="margin:0">Markup %</span>
       <span class="label" style="margin:0;color:var(--red-t)">Landed/un.</span>
-      <span class="label" style="margin:0;color:var(--green-t)">P. venta/un.</span>
-      <span class="label" style="margin:0;color:var(--blue-t)">Total venta</span>
+      <span class="label" style="margin:0;color:var(--blue-t)" id="col-venta-label">Precio venta/un.</span>
       <span></span>
     </div>
 
@@ -2573,13 +2662,11 @@ function renderCalc() {
 
     <!-- Totals row -->
     <div id="calc-prod-totals" style="display:none;border-top:2px solid var(--border2);margin-top:8px;padding-top:10px">
-      <div style="display:grid;grid-template-columns:2fr 80px 90px 70px 100px 110px 110px 32px;gap:6px;align-items:center">
+      <div style="display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;align-items:center">
         <div style="font-size:12px;font-weight:700;color:var(--text2)">TOTALES</div>
         <div class="mono" style="font-size:12px;font-weight:700" id="ct_qty">—</div>
         <div class="money" style="font-size:12px" id="ct_fob">—</div>
-        <div></div>
         <div class="money text-red" style="font-size:12px" id="ct_landed">—</div>
-        <div></div>
         <div class="money text-blue" style="font-size:13px;font-weight:700" id="ct_venta">—</div>
         <div></div>
       </div>
@@ -2739,22 +2826,18 @@ function renderCalc() {
 function addCalcProd(existing) {
   calcProdCount++
   const id = 'cp' + calcProdCount
-  const p = existing || { id, desc: '', qty: '', fob: '', markup: 30 }
-  if (!existing) calcProds.push({ id, desc: '', qty: 0, fob: 0, markup: 30 })
+  const p = existing || { id, desc: '', qty: '', fob: '' }
+  if (!existing) calcProds.push({ id, desc: '', qty: 0, fob: 0 })
 
   const row = document.createElement('div')
   row.id = 'crow-' + id
-  row.style.cssText = 'display:grid;grid-template-columns:2fr 80px 90px 70px 100px 110px 110px 32px;gap:6px;margin-bottom:6px;align-items:center'
+  row.style.cssText = 'display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;margin-bottom:6px;align-items:center'
   row.innerHTML = `
     <input class="input" style="font-size:12px" value="${p.desc||''}" placeholder="Descripción del producto" oninput="updateCalcProd('${id}','desc',this.value)"/>
     <input class="input mono" style="font-size:12px" type="number" min="0" value="${p.qty||''}" placeholder="0" oninput="updateCalcProd('${id}','qty',this.value)"/>
     <input class="input mono" style="font-size:12px" type="number" min="0" step="0.01" value="${p.fob||''}" placeholder="0.00" oninput="updateCalcProd('${id}','fob',this.value)"/>
-    <div style="display:flex;align-items:center;gap:2px">
-      <input class="input mono" style="font-size:12px" type="number" min="0" max="500" step="1" value="${p.markup||30}" oninput="updateCalcProd('${id}','markup',this.value)"/>
-    </div>
     <div class="money text-red" style="font-size:12px;padding:0 4px" id="cr_lu_${id}">—</div>
-    <div class="money text-green" style="font-size:12px;padding:0 4px" id="cr_pv_${id}">—</div>
-    <div class="money text-blue" style="font-size:12px;padding:0 4px" id="cr_tv_${id}">—</div>
+    <div class="money text-blue" style="font-size:12px;padding:0 4px" id="cr_pv_${id}">—</div>
     <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCalcProd('${id}')">×</button>
   `
   const container = document.getElementById('calc-prod-rows')
@@ -2790,10 +2873,35 @@ function resetCalc2() {
   addCalcProd()
 }
 
+let calcMode = 'cliente' // 'cliente' | 'mi'
+
+function setCalcMode(mode) {
+  calcMode = mode
+  const btnCliente = document.getElementById('btn-para-cliente')
+  const btnMi = document.getElementById('btn-para-mi')
+  const moduloGroup = document.getElementById('modulo-group')
+  const colLabel = document.getElementById('col-venta-label')
+  if (btnCliente) {
+    if (mode === 'cliente') {
+      btnCliente.className = 'btn btn-primary btn-sm'
+      btnMi.className = 'btn btn-ghost btn-sm'
+      if (moduloGroup) moduloGroup.style.display = ''
+      if (colLabel) { colLabel.textContent = 'Precio venta/un.'; colLabel.style.color = 'var(--blue-t)' }
+    } else {
+      btnCliente.className = 'btn btn-ghost btn-sm'
+      btnMi.className = 'btn btn-primary btn-sm'
+      if (moduloGroup) moduloGroup.style.display = 'none'
+      if (colLabel) { colLabel.textContent = 'Costo/un. (sin fee)'; colLabel.style.color = 'var(--green-t)' }
+    }
+  }
+  recalcAll()
+}
+
 function recalcAll() {
   const cfg = getCalcConfig()
   const modulo = document.getElementById('c2_modulo')?.value || 'A'
   const flete = parseFloat(document.getElementById('c2_flete')?.value) || 0
+  const paraMi = calcMode === 'mi'
 
   const validProds = calcProds.filter(p => (p.qty > 0) && (p.fob > 0))
   if (!validProds.length) {
@@ -2802,18 +2910,16 @@ function recalcAll() {
     return
   }
 
-  const results = calcProductLanded(validProds, flete, cfg, modulo)
+  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo)
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
 
   // Update per-product rows
   results.forEach(r => {
     const lu = document.getElementById('cr_lu_' + r.id)
     const pv = document.getElementById('cr_pv_' + r.id)
-    const tv = document.getElementById('cr_tv_' + r.id)
     if (lu) lu.textContent = fmtUSD(r.landedUnit)
     if (pv) pv.textContent = fmtUSD(r.precioVenta)
-    if (tv) tv.textContent = fmtUSD(r.precioVenta * (r.qty||0))
   })
 
   // Totals row
@@ -2834,6 +2940,7 @@ function recalcAll() {
 
   const rows = [
     { label: 'FOB mercadería', val: fobTotal, color: 'var(--blue)' },
+    { label: `Flete internacional`, val: flete, color: 'var(--teal)' },
     { label: `DI (${cfg.di_pct}%)`, val: totals.di, color: '#DC2626' },
     { label: `TE (${cfg.te_pct}%)`, val: totals.te, color: '#B91C1C' },
     { label: `IVA import. (${cfg.iva_pct}%)`, val: totals.iva, color: '#EF4444' },
@@ -2841,9 +2948,9 @@ function recalcAll() {
     { label: `Ganancias (${cfg.ganancias_pct}%)`, val: totals.ganancias, color: '#FCA5A5' },
     { label: `IIBB (${cfg.iibb_pct}%)`, val: totals.iibb, color: '#FECACA' },
     { label: 'Gastos locales y banco', val: totals.total_locales, color: 'var(--amber)' },
-    { label: 'Fee + IVA fee', val: totals.total_fee + totals.iva_fee, color: 'var(--purple)' },
+    ...(!paraMi ? [{ label: 'Fee + IVA fee', val: totals.total_fee + totals.iva_fee, color: 'var(--purple)' }] : []),
   ]
-  document.getElementById('cb_rows').innerHTML = rows.map(r => `
+  document.getElementById('cb_rows').innerHTML = rows.filter(r=>r.val>0).map(r => `
     <div style="display:flex;justify-content:space-between;padding:4px 6px;font-size:12px;border-bottom:1px solid var(--border)">
       <span style="color:var(--text2);display:flex;align-items:center;gap:6px">
         <span style="width:8px;height:8px;border-radius:2px;background:${r.color};display:inline-block;flex-shrink:0"></span>${r.label}
@@ -2853,17 +2960,19 @@ function recalcAll() {
 
   const barItems = [
     { val: fobTotal, color: 'var(--blue)' },
+    { val: flete, color: 'var(--teal)' },
     { val: totals.total_trib, color: 'var(--red)' },
     { val: totals.total_locales, color: 'var(--amber)' },
-    { val: totals.total_fee + totals.iva_fee, color: 'var(--purple)' },
+    ...(!paraMi ? [{ val: totals.total_fee + totals.iva_fee, color: 'var(--purple)' }] : []),
   ]
   document.getElementById('cb_bar').innerHTML = barItems.map(b =>
     `<div style="flex:${b.val};background:${b.color};min-width:2px"></div>`).join('')
   document.getElementById('cb_legend').innerHTML = [
-    ['FOB', fobTotal, 'var(--blue)'],
-    ['Tributos', totals.total_trib, 'var(--red)'],
-    ['Locales', totals.total_locales, 'var(--amber)'],
-    ['Fee', totals.total_fee + totals.iva_fee, 'var(--purple)'],
+    ['FOB', fobTotal, 'var(--blue-t)'],
+    ['Flete', flete, 'var(--teal-t)'],
+    ['Tributos', totals.total_trib, 'var(--red-t)'],
+    ['Locales', totals.total_locales, 'var(--amber-t)'],
+    ...(!paraMi ? [['Fee', totals.total_fee + totals.iva_fee, 'var(--purple-t)']] : []),
   ].map(([l, v, c]) => `<span style="font-size:10px;display:flex;align-items:center;gap:3px;font-family:var(--mono)">
     <span style="width:8px;height:8px;border-radius:2px;background:${c};display:inline-block"></span>${l} ${totals.landed ? Math.round(v/totals.landed*100) : 0}%
   </span>`).join('')
@@ -3369,6 +3478,127 @@ function convertQuoteToOrder(quoteId) {
   toast('Presupuesto convertido en orden ✓ — ' + newOrder.code)
   nav('orders')
 }
+
+/* ════════════════════════════════════
+   EDIT COSTOS MODAL
+════════════════════════════════════ */
+function openEditCostosModal(orderId) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o) return
+  const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
+  if (!linkedQuote?.costoDetalle) return
+  const cd = linkedQuote.costoDetalle
+  const flete = Number(linkedQuote.flete)||0
+
+  let el = document.getElementById('modal-edit-costos')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'modal-edit-costos'
+    el.className = 'modal-overlay'
+    el.onclick = e => { if(e.target===el) el.classList.remove('open') }
+    document.body.appendChild(el)
+  }
+
+  el.innerHTML = `<div class="modal modal-sm">
+    <div class="modal-header">
+      <span class="modal-title">Editar costos — ${o.code}</span>
+      <button class="modal-close" onclick="document.getElementById('modal-edit-costos').classList.remove('open')">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:14px">Ajustá los valores reales una vez que tengas los comprobantes. Los cambios se guardan en la orden.</p>
+
+    <div style="font-size:10px;font-weight:700;color:var(--teal-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Flete</div>
+    <div class="form-row mb12">
+      <div class="form-group">
+        <label class="label" style="font-size:10px">Flete marítimo (USD)</label>
+        <input class="input mono" type="number" id="ec_flete" value="${flete}" min="0" step="0.01"/>
+      </div>
+      <div class="form-group">
+        <label class="label" style="font-size:10px">Seguro (USD)</label>
+        <input class="input mono" type="number" id="ec_seguro" value="${(cd.seguro||0).toFixed(2)}" min="0" step="0.01"/>
+      </div>
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--red-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Tributos aduaneros</div>
+    <div class="form-row mb12">
+      ${[['ec_di','DI',cd.di],['ec_te','TE',cd.te],['ec_iva','IVA',cd.iva],['ec_iva_ad','IVA Adicional',cd.iva_ad],['ec_gan','Ganancias',cd.ganancias],['ec_iibb','IIBB',cd.iibb]].map(([id,lbl,val])=>`
+      <div class="form-group">
+        <label class="label" style="font-size:10px">${lbl}</label>
+        <input class="input mono" type="number" id="${id}" value="${Number(val||0).toFixed(2)}" min="0" step="0.01"/>
+      </div>`).join('')}
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--amber-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Gastos locales</div>
+    <div class="form-row mb16">
+      <div class="form-group">
+        <label class="label" style="font-size:10px">Total gastos locales y banco</label>
+        <input class="input mono" type="number" id="ec_locales" value="${Number(cd.total_locales||0).toFixed(2)}" min="0" step="0.01"/>
+      </div>
+      <div class="form-group">
+        <label class="label" style="font-size:10px">Fee de gestión total</label>
+        <input class="input mono" type="number" id="ec_fee" value="${Number((cd.total_fee||0)+(cd.iva_fee||0)).toFixed(2)}" min="0" step="0.01"/>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-edit-costos').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditCostos('${orderId}')">Guardar cambios</button>
+    </div>
+  </div>`
+
+  el.classList.add('open')
+}
+
+function saveEditCostos(orderId) {
+  const orders = getOrders()
+  const oi = orders.findIndex(o=>o.id===orderId)
+  if (oi<0) return
+  const o = orders[oi]
+  const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
+  if (!linkedQuote) return
+
+  const flete = parseFloat(document.getElementById('ec_flete').value)||0
+  const seguro = parseFloat(document.getElementById('ec_seguro').value)||0
+  const di = parseFloat(document.getElementById('ec_di').value)||0
+  const te = parseFloat(document.getElementById('ec_te').value)||0
+  const iva = parseFloat(document.getElementById('ec_iva').value)||0
+  const iva_ad = parseFloat(document.getElementById('ec_iva_ad').value)||0
+  const ganancias = parseFloat(document.getElementById('ec_gan').value)||0
+  const iibb = parseFloat(document.getElementById('ec_iibb').value)||0
+  const total_locales = parseFloat(document.getElementById('ec_locales').value)||0
+  const fee_total = parseFloat(document.getElementById('ec_fee').value)||0
+  const total_trib = di+te+iva+iva_ad+ganancias+iibb
+  const fob = Number(o.fob_total)||0
+  const cif = fob + flete + seguro
+  const landedTotal = cif + total_trib + total_locales + fee_total
+
+  // Update the linked quote's costoDetalle
+  const quotes = getQuotes()
+  const qi = quotes.findIndex(q=>q.id===o.quoteId)
+  if (qi>=0) {
+    quotes[qi].flete = flete
+    quotes[qi].landedTotal = landedTotal
+    quotes[qi].multiplo = fob ? landedTotal/fob : 0
+    quotes[qi].costoDetalle = {
+      ...quotes[qi].costoDetalle,
+      di, te, iva, iva_ad, ganancias, iibb, seguro,
+      total_trib, total_locales,
+      total_fee: fee_total, iva_fee: 0,
+    }
+    saveQuotes(quotes)
+  }
+
+  document.getElementById('modal-edit-costos').classList.remove('open')
+  toast('Costos actualizados ✓')
+  openDetail(orderId)
+}
+
+/* ════════════════════════════════════
+   SUPPLIER CATEGORIES
+════════════════════════════════════ */
+function getSupplierCats() {
+  return DB.get('supplier_cats') || ['Textiles','Electrónica','Maquinaria','Insumos','Calzado','General']
+}
+function saveSupplierCats(a) { DB.set('supplier_cats', a) }
 
 /* ════════════════════════════════════
    INIT — Wait for Firebase then render
