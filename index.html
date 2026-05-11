@@ -517,8 +517,8 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
       <input class="input" id="s-nombre" placeholder="Wenhua Textiles Co."/>
     </div>
     <div class="form-group">
-      <label class="label">Ciudad / País</label>
-      <input class="input" id="s-ciudad" placeholder="Shanghai, China"/>
+      <label class="label">Lugar FOB</label>
+      <input class="input" id="s-ciudad" placeholder="ej: Shanghai, China (FOB)"/>
     </div>
   </div>
   <div class="form-row mb12">
@@ -685,64 +685,43 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
 
 <div id="toast"></div>
 
-<script type="module">
+<script>
 /* ════════════════════════════════════
-   FIREBASE CONFIG
+   FIREBASE — dynamic import (global scope)
 ════════════════════════════════════ */
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
-
-const firebaseConfig = {
-  apiKey: "AIzaSyB-XfZ70drdfbNNEcJeRdcRG-cuRI-JlP0",
-  authDomain: "impo-crm.firebaseapp.com",
-  projectId: "impo-crm",
-  storageBucket: "impo-crm.firebasestorage.app",
-  messagingSenderId: "950078090093",
-  appId: "1:950078090093:web:cdc356835ef83b35f30864"
-}
-
-const _fbApp = initializeApp(firebaseConfig)
-const _fbDb = getFirestore(_fbApp)
-
-// Expose to global scope so the main script can use them
-window._fbDb = _fbDb
-window._fbSetDoc = setDoc
-window._fbDoc = doc
-window._fbGetDocs = getDocs
-window._fbCollection = collection
-
-window._fbReady = false
 window._fbCache = {}
+window._fbReady = false
+window._fbOnReady = null
 
-async function loadAll() {
+;(async function() {
   try {
-    const snap = await getDocs(collection(_fbDb, 'crm'))
-    snap.forEach(d => {
-      try { window._fbCache[d.id] = JSON.parse(d.data().data) } catch {}
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js')
+    const { getFirestore, doc, setDoc, getDocs, collection } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
+    const app = initializeApp({
+      apiKey: "AIzaSyB-XfZ70drdfbNNEcJeRdcRG-cuRI-JlP0",
+      authDomain: "impo-crm.firebaseapp.com",
+      projectId: "impo-crm",
+      storageBucket: "impo-crm.firebasestorage.app",
+      messagingSenderId: "950078090093",
+      appId: "1:950078090093:web:cdc356835ef83b35f30864"
     })
-  } catch(e) { console.error('Firestore load error:', e) }
+    const db = getFirestore(app)
+    const snap = await getDocs(collection(db, 'crm'))
+    snap.forEach(d => { try { window._fbCache[d.id] = JSON.parse(d.data().data) } catch {} })
+    window._fbWrite = (k, v) => setDoc(doc(db, 'crm', k), { data: JSON.stringify(v) }).catch(console.error)
+  } catch(e) { console.error('Firebase init error:', e) }
   window._fbReady = true
   if (window._fbOnReady) window._fbOnReady()
-}
+})()
 
-loadAll()
-</script>
-
-<script>
 /* ════════════════════════════════════
    DATA LAYER — Firebase Firestore
 ════════════════════════════════════ */
 const DB = {
-  get(k) {
-    return window._fbCache?.[k] ?? null
-  },
+  get(k) { return window._fbCache?.[k] ?? null },
   set(k, v) {
     if (window._fbCache) window._fbCache[k] = v
-    // Async write — fire and forget
-    if (window._fbSetDoc && window._fbDb && window._fbDoc) {
-      window._fbSetDoc(window._fbDoc(window._fbDb, 'crm', k), { data: JSON.stringify(v) })
-        .catch(e => console.error('DB write error:', k, e))
-    }
+    if (window._fbWrite) window._fbWrite(k, v)
   }
 }
 
@@ -1408,108 +1387,163 @@ function detPagos(o) {
 function detCostos(o) {
   const fob = Number(o.fob_total)||0
   const totalC = totalCostos(o)
-  const landed = fob + totalC
 
-  // Find linked quote for full calculator breakdown
+  // Check for linked quote first
   const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
-  const cd = linkedQuote?.costoDetalle || null
-  const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : 0
-  // landedTotal stored in quote already includes fob+flete+seguro+trib+locales+fee
-  const fullLanded = cd ? (Number(linkedQuote.landedTotal)||0) : landed
+  const cd = linkedQuote?.costoDetalle || o._costoDetalle || null
+  const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : (o._flete||0)
+  const fullLanded = cd
+    ? (linkedQuote ? (Number(linkedQuote.landedTotal)||0) : (Number(o._landedTotal)||0))
+    : fob + totalC
 
   return `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <div style="font-size:12px;color:var(--text2)">${linkedQuote?`Vinculado al presupuesto <strong>${linkedQuote.code}</strong>`:'Sin presupuesto vinculado'}</div>
+    <div style="font-size:12px;color:var(--text2)">
+      ${linkedQuote
+        ? `Vinculado al presupuesto <strong>${linkedQuote.code}</strong>`
+        : cd ? '📊 Costos calculados directamente en la orden' : ''}
+    </div>
     <div style="display:flex;gap:6px">
-      ${cd?`<button class="btn btn-sm" onclick="openEditCostosModal('${o.id}')">✏️ Editar costos</button>`:''}
-      <button class="btn btn-primary btn-sm" onclick="openCostoModal('${o.id}')">+ Agregar costo extra</button>
+      ${cd ? `<button class="btn btn-sm" onclick="openEditCostosModal('${o.id}')">✏️ Editar costos</button>` : ''}
+      <button class="btn btn-primary btn-sm" onclick="openCostoModal('${o.id}')">+ Costo extra</button>
     </div>
   </div>
 
-  <!-- KPI STRIP -->
-  <div style="display:grid;grid-template-columns:repeat(${cd?5:3},1fr);gap:10px;margin-bottom:14px">
-    <div class="card-flat" style="text-align:center">
-      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">FOB Mercadería</div>
-      <div class="money text-blue" style="font-size:16px">${fmtUSD(fob)}</div>
+  ${!cd ? `
+  <!-- CALCULADORA EMBEBIDA — sin presupuesto vinculado -->
+  <div class="card-flat" style="margin-bottom:14px;border:1px dashed var(--border2)">
+    <div style="font-size:12px;font-weight:700;margin-bottom:10px">🧮 Calcular costos de importación</div>
+    <div class="form-row mb10">
+      <div class="form-group">
+        <label class="label">Flete internacional (USD)</label>
+        <input class="input mono" type="number" id="emb_flete_${o.id}" min="0" step="1" placeholder="ej: 2500" oninput="embCalc('${o.id}')"/>
+      </div>
+      <div class="form-group">
+        <label class="label">Modo</label>
+        <select class="select" id="emb_modo_${o.id}" onchange="embCalc('${o.id}')">
+          <option value="mi">Para mí (sin fee)</option>
+          <option value="cliente">Para cliente (con fee)</option>
+        </select>
+      </div>
     </div>
-    ${cd?`
+    <div class="form-row-3 mb10">
+      <div class="form-group">
+        <label class="label">DI %</label>
+        <input class="input mono" type="number" id="emb_di_${o.id}" value="${getCalcConfig().di_pct}" step="0.1" oninput="embCalc('${o.id}')"/>
+      </div>
+      <div class="form-group">
+        <label class="label">IVA %</label>
+        <input class="input mono" type="number" id="emb_iva_${o.id}" value="${getCalcConfig().iva_pct}" step="0.1" oninput="embCalc('${o.id}')"/>
+      </div>
+      <div class="form-group">
+        <label class="label">IVA Adic. %</label>
+        <input class="input mono" type="number" id="emb_iva_ad_${o.id}" value="${getCalcConfig().iva_adicional_pct}" step="0.1" oninput="embCalc('${o.id}')"/>
+      </div>
+      <div class="form-group">
+        <label class="label">Ganancias %</label>
+        <input class="input mono" type="number" id="emb_gan_${o.id}" value="${getCalcConfig().ganancias_pct}" step="0.1" oninput="embCalc('${o.id}')"/>
+      </div>
+      <div class="form-group">
+        <label class="label">IIBB %</label>
+        <input class="input mono" type="number" id="emb_iibb_${o.id}" value="${getCalcConfig().iibb_pct}" step="0.1" oninput="embCalc('${o.id}')"/>
+      </div>
+      <div class="form-group">
+        <label class="label">TE % (cap $${getCalcConfig().te_cap})</label>
+        <input class="input mono" type="number" id="emb_te_${o.id}" value="${getCalcConfig().te_pct}" step="0.1" oninput="embCalc('${o.id}')"/>
+      </div>
+    </div>
+    <div id="emb_result_${o.id}" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px" id="emb_kpis_${o.id}"></div>
+      <div id="emb_rows_${o.id}"></div>
+      <div style="background:var(--blue-bg);border-radius:var(--r);padding:10px 12px;display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <span style="font-size:13px;font-weight:700;color:var(--blue-t)">LANDED COST TOTAL</span>
+        <span class="money text-blue" style="font-size:18px" id="emb_total_${o.id}">—</span>
+      </div>
+    </div>
+    ${fob > 0 ? `<button class="btn btn-primary btn-sm" style="margin-top:10px;width:100%" onclick="embSave('${o.id}')">💾 Guardar estos costos en la orden</button>` : '<p style="font-size:11px;color:var(--text3);margin-top:6px">Primero asegurate de tener el FOB total cargado en la orden.</p>'}
+  </div>` : ''}
+
+  ${cd ? `
+  <!-- DESGLOSE COMPLETO -->
+  <!-- KPIs -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px">
     <div class="card-flat" style="text-align:center">
-      <div style="font-size:10px;font-weight:700;color:var(--teal-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Flete int.</div>
-      <div class="money" style="font-size:16px;color:var(--teal-t)">${fmtUSD(flete)}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">FOB</div>
+      <div class="money text-blue" style="font-size:15px">${fmtUSD(fob)}</div>
+    </div>
+    <div class="card-flat" style="text-align:center">
+      <div style="font-size:10px;font-weight:700;color:var(--teal-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Flete</div>
+      <div class="money" style="font-size:15px;color:var(--teal-t)">${fmtUSD(flete)}</div>
     </div>
     <div class="card-flat" style="text-align:center">
       <div style="font-size:10px;font-weight:700;color:var(--red-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Tributos</div>
-      <div class="money text-red" style="font-size:16px">${fmtUSD(cd.total_trib)}</div>
+      <div class="money text-red" style="font-size:15px">${fmtUSD(cd.total_trib)}</div>
     </div>
     <div class="card-flat" style="text-align:center">
       <div style="font-size:10px;font-weight:700;color:var(--amber-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Gastos op.</div>
-      <div class="money text-amber" style="font-size:16px">${fmtUSD(cd.total_locales)}</div>
-    </div>`:`<div class="card-flat" style="text-align:center">
-      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Gastos cargados</div>
-      <div class="money text-amber" style="font-size:16px">${fmtUSD(totalC)}</div>
-    </div>`}
+      <div class="money text-amber" style="font-size:15px">${fmtUSD(cd.total_locales)}</div>
+    </div>
     <div class="card-flat" style="text-align:center;background:var(--blue-bg)">
-      <div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Landed Cost</div>
-      <div class="money text-blue" style="font-size:16px">${fmtUSD(fullLanded)}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Landed</div>
+      <div class="money text-blue" style="font-size:15px">${fmtUSD(fullLanded)}</div>
     </div>
   </div>
 
-  ${cd ? `
-  <!-- DESGLOSE COMPLETO DE LA CALCULADORA -->
-  <div style="margin-bottom:14px">
-    <!-- Flete -->
-    <div class="cost-block" style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div class="cost-block-title" style="color:var(--teal-t);margin:0">🚢 Flete internacional</div>
-        <span class="money" style="color:var(--teal-t)">${fmtUSD(flete)}</span>
-      </div>
-      <div class="cost-line"><span style="color:var(--text2)">Flete marítimo</span><span class="money">${fmtUSD(flete)}</span></div>
+  <!-- Flete -->
+  <div class="cost-block" style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div class="cost-block-title" style="color:var(--teal-t);margin:0">🚢 Flete internacional</div>
+      <span class="money" style="color:var(--teal-t)">${fmtUSD(flete)}</span>
     </div>
-    <!-- Tributos -->
-    <div class="cost-block" style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div class="cost-block-title" style="color:var(--red-t);margin:0">🔴 Tributos aduaneros</div>
-        <span class="money text-red">${fmtUSD(cd.total_trib)}</span>
-      </div>
-      ${[['Derecho de Importación (DI)',cd.di],['Tasa de Estadística (TE)',cd.te],['IVA importación',cd.iva],['IVA Adicional',cd.iva_ad],['Perc. Ganancias',cd.ganancias],['Perc. IIBB',cd.iibb]].map(([l,v])=>`
-      <div class="cost-line"><span style="color:var(--text2)">${l}</span><span class="money">${fmtUSD(v)}</span></div>`).join('')}
+    <div class="cost-line"><span style="color:var(--text2)">Flete marítimo</span><span class="money">${fmtUSD(flete)}</span></div>
+  </div>
+  <!-- Tributos -->
+  <div class="cost-block" style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div class="cost-block-title" style="color:var(--red-t);margin:0">🔴 Tributos aduaneros</div>
+      <span class="money text-red">${fmtUSD(cd.total_trib)}</span>
     </div>
-    <!-- Gastos locales -->
-    <div class="cost-block" style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div class="cost-block-title" style="color:var(--amber-t);margin:0">🟡 Gastos operativos y bancarios</div>
-        <span class="money text-amber">${fmtUSD(cd.total_locales)}</span>
-      </div>
-      <div class="cost-line"><span style="color:var(--text2)">Gastos portuarios, banco y flete local</span><span class="money">${fmtUSD(cd.total_locales)}</span></div>
+    ${[['Derecho de Importación (DI)',cd.di],['Tasa de Estadística (TE)',cd.te],['IVA importación',cd.iva],['IVA Adicional',cd.iva_ad],['Perc. Ganancias',cd.ganancias],['Perc. IIBB',cd.iibb]].map(([l,v])=>`
+    <div class="cost-line"><span style="color:var(--text2)">${l}</span><span class="money">${fmtUSD(v)}</span></div>`).join('')}
+  </div>
+  <!-- Gastos -->
+  <div class="cost-block" style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div class="cost-block-title" style="color:var(--amber-t);margin:0">🟡 Gastos operativos y bancarios</div>
+      <span class="money text-amber">${fmtUSD(cd.total_locales)}</span>
     </div>
-    <!-- Fee -->
-    <div class="cost-block" style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div class="cost-block-title" style="color:var(--purple-t);margin:0">🟣 Fee de gestión</div>
-        <span class="money" style="color:var(--purple-t)">${fmtUSD((cd.total_fee||0)+(cd.iva_fee||0))}</span>
-      </div>
-      <div class="cost-line"><span style="color:var(--text2)">Fee de servicio</span><span class="money">${fmtUSD(cd.total_fee)}</span></div>
-      <div class="cost-line"><span style="color:var(--text2)">IVA sobre fee</span><span class="money">${fmtUSD(cd.iva_fee)}</span></div>
+    <div class="cost-line"><span style="color:var(--text2)">Gastos portuarios, banco y flete local</span><span class="money">${fmtUSD(cd.total_locales)}</span></div>
+  </div>
+  ${(cd.total_fee||0)+(cd.iva_fee||0) > 0 ? `
+  <div class="cost-block" style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div class="cost-block-title" style="color:var(--purple-t);margin:0">🟣 Fee de gestión</div>
+      <span class="money" style="color:var(--purple-t)">${fmtUSD((cd.total_fee||0)+(cd.iva_fee||0))}</span>
     </div>
-    <!-- Landed total -->
-    <div style="background:var(--blue-bg);border:1px solid #BFDBFE;border-radius:var(--r);padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:13px;font-weight:700;color:var(--blue-t)">LANDED COST TOTAL</span>
-      <span class="money text-blue" style="font-size:18px">${fmtUSD(fullLanded)}</span>
-    </div>
-    ${linkedQuote.multiplo?`<div style="text-align:right;font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--mono)">Múltiplo sobre FOB: ${linkedQuote.multiplo.toFixed(2)}x</div>`:''}
+    <div class="cost-line"><span style="color:var(--text2)">Fee de servicio</span><span class="money">${fmtUSD(cd.total_fee||0)}</span></div>
+    ${cd.iva_fee ? `<div class="cost-line"><span style="color:var(--text2)">IVA sobre fee</span><span class="money">${fmtUSD(cd.iva_fee)}</span></div>` : ''}
   </div>` : ''}
+  <div style="background:var(--blue-bg);border:1px solid #BFDBFE;border-radius:var(--r);padding:12px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-size:13px;font-weight:700;color:var(--blue-t)">LANDED COST TOTAL</span>
+    <span class="money text-blue" style="font-size:18px">${fmtUSD(fullLanded)}</span>
+  </div>
+  ${fob > 0 ? `<div style="background:var(--surface2);border-radius:var(--r);padding:8px 12px;display:flex;gap:12px;flex-wrap:wrap">
+    ${[['FOB',fob,'var(--blue-t)'],['Flete',flete,'var(--teal-t)'],['Tributos',cd.total_trib,'var(--red-t)'],['Gastos',cd.total_locales,'var(--amber-t)'],['Fee',(cd.total_fee||0)+(cd.iva_fee||0),'var(--purple-t)']].filter(([,v])=>v>0).map(([l,v,c])=>`
+    <span style="font-size:10px;font-family:var(--mono);color:${c}">${l} ${fullLanded?Math.round(v/fullLanded*100):0}%</span>`).join('')}
+  </div>` : ''}
+  ` : ''}
 
   <!-- COSTOS EXTRA MANUALES -->
-  ${(o.costos||[]).length>0?`
-  <div style="margin-top:4px">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;font-family:var(--mono);color:var(--text2);margin-bottom:8px">Costos adicionales cargados manualmente</div>
-    ${['naviera','impuesto','otros'].map(cat=>{
-      const costos=(o.costos||[]).filter(c=>c.cat===cat)
-      if(!costos.length) return ''
+  ${(o.costos||[]).length > 0 ? `
+  <div style="margin-top:10px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;font-family:var(--mono);color:var(--text2);margin-bottom:8px">Costos adicionales</div>
+    ${['naviera','impuesto','otros'].map(cat => {
+      const costos = (o.costos||[]).filter(c=>c.cat===cat)
+      if (!costos.length) return ''
       return `<div class="cost-block" style="margin-bottom:8px">
         <div class="cost-block-title" style="color:${COST_COLORS[cat]};margin-bottom:6px">${COST_CATS[cat]}</div>
-        ${costos.map((c,i)=>`<div class="cost-line">
-          <span style="color:var(--text2)">${c.concepto||'—'}${c.nota?` <span style="color:var(--text3)">(${c.nota})</span>`:''}</span>
+        ${costos.map(c => `<div class="cost-line">
+          <span style="color:var(--text2)">${c.concepto||'—'}${c.nota?` (${c.nota})`:''}</span>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${fmtDate(c.fecha)}</span>
             <span class="money">${fmtUSD(c.monto)}</span>
@@ -1517,26 +1551,82 @@ function detCostos(o) {
           </div>
         </div>`).join('')}
       </div>`}).join('')}
-  </div>`:(!cd?`<div style="text-align:center;padding:20px;color:var(--text3)">
-    <div style="font-size:20px;margin-bottom:6px">📋</div>
-    <div style="font-size:12px">Vinculá un presupuesto de la calculadora para ver el desglose completo de costos,<br>o agregá costos manuales con el botón de arriba.</div>
-  </div>`:'')}
+  </div>` : ''}
+  `
+}
 
-  <!-- BARRA DISTRIBUCIÓN -->
-  ${cd&&fob>0?`<div style="background:var(--surface2);border-radius:var(--r);padding:10px 14px;margin-top:8px">
-    <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px;font-family:var(--mono)">Distribución del costo total</div>
-    <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;gap:1px">
-      <div style="flex:${fob};background:var(--blue)" title="FOB"></div>
-      <div style="flex:${flete};background:var(--teal)" title="Flete"></div>
-      <div style="flex:${cd.total_trib};background:var(--red)" title="Tributos"></div>
-      <div style="flex:${cd.total_locales};background:var(--amber)" title="Gastos locales"></div>
-      <div style="flex:${(cd.total_fee||0)+(cd.iva_fee||0)};background:var(--purple)" title="Fee"></div>
-    </div>
-    <div style="display:flex;gap:12px;margin-top:5px;font-size:10px;font-family:var(--mono);flex-wrap:wrap">
-      ${[['FOB',fob,'var(--blue-t)'],['Flete',flete,'var(--teal-t)'],['Tributos',cd.total_trib,'var(--red-t)'],['Gastos',cd.total_locales,'var(--amber-t)'],['Fee',(cd.total_fee||0)+(cd.iva_fee||0),'var(--purple-t)']].map(([l,v,c])=>{
-        return `<span style="color:${c}">${l} ${fullLanded?Math.round(v/fullLanded*100):0}%</span>`}).join('')}
-    </div>
-  </div>`:''}` 
+/* ── Embedded calc functions ── */
+function embCalc(orderId) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o) return
+  const fob = Number(o.fob_total)||0
+  if (!fob) return
+  const cfg = { ...getCalcConfig() }
+  cfg.di_pct = parseFloat(document.getElementById(`emb_di_${orderId}`)?.value) || cfg.di_pct
+  cfg.iva_pct = parseFloat(document.getElementById(`emb_iva_${orderId}`)?.value) || cfg.iva_pct
+  cfg.iva_adicional_pct = parseFloat(document.getElementById(`emb_iva_ad_${orderId}`)?.value) || cfg.iva_adicional_pct
+  cfg.ganancias_pct = parseFloat(document.getElementById(`emb_gan_${orderId}`)?.value) || cfg.ganancias_pct
+  cfg.iibb_pct = parseFloat(document.getElementById(`emb_iibb_${orderId}`)?.value) || cfg.iibb_pct
+  cfg.te_pct = parseFloat(document.getElementById(`emb_te_${orderId}`)?.value) || cfg.te_pct
+  const flete = parseFloat(document.getElementById(`emb_flete_${orderId}`)?.value) || 0
+  const modo = document.getElementById(`emb_modo_${orderId}`)?.value || 'mi'
+  const paraMi = modo === 'mi'
+  const t = computeLanded(fob, flete, cfg, 'A', paraMi)
+
+  const res = document.getElementById(`emb_result_${orderId}`)
+  if (res) res.style.display = 'block'
+  const kpis = document.getElementById(`emb_kpis_${orderId}`)
+  if (kpis) kpis.innerHTML = [
+    ['Flete', flete, 'var(--teal-t)'],
+    ['Tributos', t.total_trib, 'var(--red-t)'],
+    ['Gastos op.', t.total_locales, 'var(--amber-t)'],
+    ...(!paraMi ? [['Fee', t.total_fee + t.iva_fee, 'var(--purple-t)']] : []),
+  ].map(([l,v,c]) => `<div class="card-flat" style="text-align:center">
+    <div style="font-size:9px;font-weight:700;color:${c};text-transform:uppercase;font-family:var(--mono);margin-bottom:3px">${l}</div>
+    <div class="money" style="font-size:13px;color:${c}">${fmtUSD(v)}</div>
+  </div>`).join('')
+
+  const rows = document.getElementById(`emb_rows_${orderId}`)
+  if (rows) rows.innerHTML = [
+    ['DI', t.di], ['TE', t.te], ['IVA', t.iva], ['IVA Adic.', t.iva_ad],
+    ['Ganancias', t.ganancias], ['IIBB', t.iibb], ['Gastos locales', t.total_locales],
+    ...(!paraMi ? [['Fee + IVA fee', t.total_fee + t.iva_fee]] : []),
+  ].filter(([,v]) => v > 0).map(([l,v]) => `<div class="cost-line"><span style="color:var(--text2)">${l}</span><span class="money">${fmtUSD(v)}</span></div>`).join('')
+
+  const tot = document.getElementById(`emb_total_${orderId}`)
+  if (tot) tot.textContent = fmtUSD(t.landed)
+}
+
+function embSave(orderId) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o || !o.fob_total) return
+  const fob = Number(o.fob_total)
+  const cfg = { ...getCalcConfig() }
+  cfg.di_pct = parseFloat(document.getElementById(`emb_di_${orderId}`)?.value) || cfg.di_pct
+  cfg.iva_pct = parseFloat(document.getElementById(`emb_iva_${orderId}`)?.value) || cfg.iva_pct
+  cfg.iva_adicional_pct = parseFloat(document.getElementById(`emb_iva_ad_${orderId}`)?.value) || cfg.iva_adicional_pct
+  cfg.ganancias_pct = parseFloat(document.getElementById(`emb_gan_${orderId}`)?.value) || cfg.ganancias_pct
+  cfg.iibb_pct = parseFloat(document.getElementById(`emb_iibb_${orderId}`)?.value) || cfg.iibb_pct
+  cfg.te_pct = parseFloat(document.getElementById(`emb_te_${orderId}`)?.value) || cfg.te_pct
+  const flete = parseFloat(document.getElementById(`emb_flete_${orderId}`)?.value) || 0
+  const modo = document.getElementById(`emb_modo_${orderId}`)?.value || 'mi'
+  const paraMi = modo === 'mi'
+  const t = computeLanded(fob, flete, cfg, 'A', paraMi)
+
+  const orders = getOrders()
+  const idx = orders.findIndex(x=>x.id===orderId)
+  if (idx < 0) return
+  orders[idx]._flete = flete
+  orders[idx]._landedTotal = t.landed
+  orders[idx]._costoDetalle = {
+    di: t.di, te: t.te, iva: t.iva, iva_ad: t.iva_ad,
+    ganancias: t.ganancias, iibb: t.iibb, seguro: t.seguro,
+    total_trib: t.total_trib, total_locales: t.total_locales,
+    total_fee: t.total_fee, iva_fee: t.iva_fee,
+  }
+  saveOrders(orders)
+  toast('Costos guardados en la orden ✓')
+  openDetail(orderId)
 }
 
 function detContenedores(o) {
@@ -2363,7 +2453,7 @@ function renderSuppliers() {
           return `<div class="card">
             <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
               <div class="entity-avatar" style="background:var(--purple-bg);color:var(--purple-t)">${init}</div>
-              <div style="flex:1"><div style="font-weight:700;font-size:14px">${s.nombre}</div><div style="font-size:11px;color:var(--text3)">${s.ciudad||'—'}</div></div>
+              <div style="flex:1"><div style="font-weight:700;font-size:14px">${s.nombre}</div><div style="font-size:11px;color:var(--text3)">FOB: ${s.ciudad||'—'}</div></div>
               <button class="btn btn-ghost btn-xs" onclick="editSupplier('${s.id}')">✏️</button>
             </div>
             <div style="font-size:12px;color:var(--text2);margin-bottom:3px">Cat: ${s.cat||'—'} · Lead time: ${s.leadtime?s.leadtime+'d':'—'}</div>
@@ -3486,9 +3576,9 @@ function openEditCostosModal(orderId) {
   const o = getOrders().find(x=>x.id===orderId)
   if (!o) return
   const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
-  if (!linkedQuote?.costoDetalle) return
-  const cd = linkedQuote.costoDetalle
-  const flete = Number(linkedQuote.flete)||0
+  const cd = linkedQuote?.costoDetalle || o._costoDetalle
+  if (!cd) return
+  const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : (Number(o._flete)||0)
 
   let el = document.getElementById('modal-edit-costos')
   if (!el) {
@@ -3549,13 +3639,6 @@ function openEditCostosModal(orderId) {
 }
 
 function saveEditCostos(orderId) {
-  const orders = getOrders()
-  const oi = orders.findIndex(o=>o.id===orderId)
-  if (oi<0) return
-  const o = orders[oi]
-  const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
-  if (!linkedQuote) return
-
   const flete = parseFloat(document.getElementById('ec_flete').value)||0
   const seguro = parseFloat(document.getElementById('ec_seguro').value)||0
   const di = parseFloat(document.getElementById('ec_di').value)||0
@@ -3567,26 +3650,24 @@ function saveEditCostos(orderId) {
   const total_locales = parseFloat(document.getElementById('ec_locales').value)||0
   const fee_total = parseFloat(document.getElementById('ec_fee').value)||0
   const total_trib = di+te+iva+iva_ad+ganancias+iibb
+
+  const orders = getOrders()
+  const oi = orders.findIndex(x=>x.id===orderId)
+  if (oi<0) return
+  const o = orders[oi]
   const fob = Number(o.fob_total)||0
   const cif = fob + flete + seguro
   const landedTotal = cif + total_trib + total_locales + fee_total
+  const costoDetalle = { di, te, iva, iva_ad, ganancias, iibb, seguro, total_trib, total_locales, total_fee: fee_total, iva_fee: 0 }
 
-  // Update the linked quote's costoDetalle
-  const quotes = getQuotes()
-  const qi = quotes.findIndex(q=>q.id===o.quoteId)
-  if (qi>=0) {
-    quotes[qi].flete = flete
-    quotes[qi].landedTotal = landedTotal
-    quotes[qi].multiplo = fob ? landedTotal/fob : 0
-    quotes[qi].costoDetalle = {
-      ...quotes[qi].costoDetalle,
-      di, te, iva, iva_ad, ganancias, iibb, seguro,
-      total_trib, total_locales,
-      total_fee: fee_total, iva_fee: 0,
-    }
-    saveQuotes(quotes)
+  if (o.quoteId) {
+    const quotes = getQuotes()
+    const qi = quotes.findIndex(q=>q.id===o.quoteId)
+    if (qi>=0) { quotes[qi].flete = flete; quotes[qi].landedTotal = landedTotal; quotes[qi].multiplo = fob?landedTotal/fob:0; quotes[qi].costoDetalle = costoDetalle; saveQuotes(quotes) }
+  } else {
+    orders[oi]._flete = flete; orders[oi]._landedTotal = landedTotal; orders[oi]._costoDetalle = costoDetalle
+    saveOrders(orders)
   }
-
   document.getElementById('modal-edit-costos').classList.remove('open')
   toast('Costos actualizados ✓')
   openDetail(orderId)
