@@ -2503,7 +2503,7 @@ function getCalcSaves() { return DB.get('calc_saves2') || [] }
 function saveCalcSaves(a) { DB.set('calc_saves2', a) }
 
 // Core landed cost math — takes total FOB and shared costs
-function computeLanded(fob, flete, cfg, modulo) {
+function computeLanded(fob, flete, cfg, modulo, paraMi = false) {
   const seguro = (fob + flete) * (cfg.seguro_pct / 100)
   const cif = fob + flete + seguro
   const banco_ext = fob * (cfg.gasto_banco_ext_pct / 100)
@@ -2516,32 +2516,27 @@ function computeLanded(fob, flete, cfg, modulo) {
   const iibb = base_amp * (cfg.iibb_pct / 100)
   const total_trib = di + te + iva + iva_ad + ganancias + iibb
   const total_locales = cfg.despachante + cfg.thc_bl + cfg.almacenaje + cfg.swift_local + cfg.flete_interno + banco_ext
-  const fee_fijo = modulo === 'A' ? cfg.fee_fijo_a : cfg.fee_fijo_b
-  const fee_pct_val = fob * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
+  const fee_fijo = paraMi ? 0 : (modulo === 'A' ? cfg.fee_fijo_a : cfg.fee_fijo_b)
+  const fee_pct_val = paraMi ? 0 : fob * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
   const total_fee = fee_fijo + fee_pct_val
-  const iva_fee = total_fee * (cfg.iva_fee_pct / 100)
+  const iva_fee = paraMi ? 0 : total_fee * (cfg.iva_fee_pct / 100)
   const landed = cif + total_trib + total_locales + total_fee + iva_fee
   return { seguro, cif, banco_ext, di, te, base_amp, iva, iva_ad, ganancias, iibb,
            total_trib, total_locales, fee_fijo, fee_pct_val, total_fee, iva_fee, landed }
 }
 
 // Distribute shared costs proportionally to each product by FOB weight
-function calcProductLanded(products, flete, cfg, modulo) {
+function calcProductLanded(products, flete, cfg, modulo, paraMi = false) {
   const fobTotal = products.reduce((s, p) => s + (p.qty||0)*(p.fob||0), 0)
   if (!fobTotal) return products.map(p => ({ ...p, landed_unit: 0, landed_total: 0, multiplo: 0 }))
-  const totals = computeLanded(fobTotal, flete, cfg, modulo)
-  const overheadPerFob = (totals.landed - fobTotal) / fobTotal // ratio of overhead to FOB
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
+  const overheadPerFob = (totals.landed - fobTotal) / fobTotal
 
   return products.map(p => {
     const pFob = (p.qty||0) * (p.fob||0)
-    const pWeight = fobTotal ? pFob / fobTotal : 0
-    const pOverhead = totals.landed * pWeight - pFob * pWeight  // proportional overhead
-    // landed per unit = fob + proportional share of all overhead / qty
     const landedTotal = pFob + pFob * overheadPerFob
     const landedUnit = (p.qty||0) > 0 ? landedTotal / p.qty : 0
-    const markup = Number(p.markup) || 0
-    const precioVenta = landedUnit * (1 + markup / 100)
-    return { ...p, pFob, pWeight, landedTotal, landedUnit, precioVenta, multiplo: pFob > 0 ? landedTotal/pFob : 0 }
+    return { ...p, pFob, landedTotal, landedUnit, precioVenta: landedUnit, multiplo: pFob > 0 ? landedTotal/pFob : 0 }
   })
 }
 
@@ -2567,13 +2562,18 @@ function renderCalc() {
         <button class="btn btn-primary btn-sm" onclick="openSaveAsQuote()">📋 Guardar como presupuesto</button>
       </div>
     </div>
+    <!-- MODO TOGGLE -->
+    <div style="display:flex;gap:0;background:var(--surface2);border-radius:var(--r);padding:3px;margin-bottom:12px;width:fit-content">
+      <button id="btn-para-cliente" class="btn btn-primary btn-sm" style="border-radius:5px" onclick="setCalcMode('cliente')">Para cliente</button>
+      <button id="btn-para-mi" class="btn btn-ghost btn-sm" style="border-radius:5px" onclick="setCalcMode('mi')">Para mí (sin fee)</button>
+    </div>
     <div class="form-row mb10">
       <div class="form-group">
         <label class="label">Flete internacional total (USD)</label>
         <input class="input mono" type="number" id="c2_flete" min="0" step="1" placeholder="2500" oninput="recalcAll()" value=""/>
         <span class="form-hint">Se distribuye proporcionalmente entre productos</span>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="modulo-group">
         <label class="label">Módulo de servicio</label>
         <select class="select" id="c2_modulo" onchange="recalcAll()">
           <option value="A">Módulo A — Llave en mano</option>
@@ -2591,13 +2591,12 @@ function renderCalc() {
     </div>
 
     <!-- Header -->
-    <div style="display:grid;grid-template-columns:2fr 80px 90px 70px 100px 110px 110px 32px;gap:6px;margin-bottom:6px;padding:0 2px">
+    <div style="display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;margin-bottom:6px;padding:0 2px">
       <span class="label" style="margin:0">Descripción</span>
       <span class="label" style="margin:0">Cantidad</span>
       <span class="label" style="margin:0">FOB unit.</span>
-      <span class="label" style="margin:0">Markup %</span>
       <span class="label" style="margin:0;color:var(--red-t)">Landed/un.</span>
-      <span class="label" style="margin:0;color:var(--green-t)">P. venta/un.</span>
+      <span class="label" style="margin:0;color:var(--blue-t)" id="col-venta-label">Precio/un.</span>
       <span class="label" style="margin:0;color:var(--blue-t)">Total venta</span>
       <span></span>
     </div>
@@ -2606,7 +2605,7 @@ function renderCalc() {
 
     <!-- Totals row -->
     <div id="calc-prod-totals" style="display:none;border-top:2px solid var(--border2);margin-top:8px;padding-top:10px">
-      <div style="display:grid;grid-template-columns:2fr 80px 90px 70px 100px 110px 110px 32px;gap:6px;align-items:center">
+      <div style="display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;align-items:center">
         <div style="font-size:12px;font-weight:700;color:var(--text2)">TOTALES</div>
         <div class="mono" style="font-size:12px;font-weight:700" id="ct_qty">—</div>
         <div class="money" style="font-size:12px" id="ct_fob">—</div>
@@ -2772,22 +2771,18 @@ function renderCalc() {
 function addCalcProd(existing) {
   calcProdCount++
   const id = 'cp' + calcProdCount
-  const p = existing || { id, desc: '', qty: '', fob: '', markup: 30 }
-  if (!existing) calcProds.push({ id, desc: '', qty: 0, fob: 0, markup: 30 })
+  const p = existing || { id, desc: '', qty: '', fob: '' }
+  if (!existing) calcProds.push({ id, desc: '', qty: 0, fob: 0 })
 
   const row = document.createElement('div')
   row.id = 'crow-' + id
-  row.style.cssText = 'display:grid;grid-template-columns:2fr 80px 90px 70px 100px 110px 110px 32px;gap:6px;margin-bottom:6px;align-items:center'
+  row.style.cssText = 'display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;margin-bottom:6px;align-items:center'
   row.innerHTML = `
     <input class="input" style="font-size:12px" value="${p.desc||''}" placeholder="Descripción del producto" oninput="updateCalcProd('${id}','desc',this.value)"/>
     <input class="input mono" style="font-size:12px" type="number" min="0" value="${p.qty||''}" placeholder="0" oninput="updateCalcProd('${id}','qty',this.value)"/>
     <input class="input mono" style="font-size:12px" type="number" min="0" step="0.01" value="${p.fob||''}" placeholder="0.00" oninput="updateCalcProd('${id}','fob',this.value)"/>
-    <div style="display:flex;align-items:center;gap:2px">
-      <input class="input mono" style="font-size:12px" type="number" min="0" max="500" step="1" value="${p.markup||30}" oninput="updateCalcProd('${id}','markup',this.value)"/>
-    </div>
     <div class="money text-red" style="font-size:12px;padding:0 4px" id="cr_lu_${id}">—</div>
-    <div class="money text-green" style="font-size:12px;padding:0 4px" id="cr_pv_${id}">—</div>
-    <div class="money text-blue" style="font-size:12px;padding:0 4px" id="cr_tv_${id}">—</div>
+    <div class="money text-blue" style="font-size:12px;padding:0 4px" id="cr_pv_${id}">—</div>
     <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCalcProd('${id}')">×</button>
   `
   const container = document.getElementById('calc-prod-rows')
@@ -2823,10 +2818,30 @@ function resetCalc2() {
   addCalcProd()
 }
 
+let calcMode = 'cliente'
+function setCalcMode(mode) {
+  calcMode = mode
+  const bc = document.getElementById('btn-para-cliente')
+  const bm = document.getElementById('btn-para-mi')
+  const mg = document.getElementById('modulo-group')
+  const cl = document.getElementById('col-venta-label')
+  if (bc && bm) {
+    if (mode === 'cliente') {
+      bc.className = 'btn btn-primary btn-sm'; bm.className = 'btn btn-ghost btn-sm'
+      if (mg) mg.style.display = ''; if (cl) { cl.textContent = 'Precio/un.'; cl.style.color = 'var(--blue-t)' }
+    } else {
+      bc.className = 'btn btn-ghost btn-sm'; bm.className = 'btn btn-primary btn-sm'
+      if (mg) mg.style.display = 'none'; if (cl) { cl.textContent = 'Costo/un.'; cl.style.color = 'var(--green-t)' }
+    }
+  }
+  recalcAll()
+}
+
 function recalcAll() {
   const cfg = getCalcConfig()
   const modulo = document.getElementById('c2_modulo')?.value || 'A'
   const flete = parseFloat(document.getElementById('c2_flete')?.value) || 0
+  const paraMi = (typeof calcMode !== 'undefined' && calcMode === 'mi')
 
   const validProds = calcProds.filter(p => (p.qty > 0) && (p.fob > 0))
   if (!validProds.length) {
@@ -2835,18 +2850,16 @@ function recalcAll() {
     return
   }
 
-  const results = calcProductLanded(validProds, flete, cfg, modulo)
+  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo)
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
 
   // Update per-product rows
   results.forEach(r => {
     const lu = document.getElementById('cr_lu_' + r.id)
     const pv = document.getElementById('cr_pv_' + r.id)
-    const tv = document.getElementById('cr_tv_' + r.id)
     if (lu) lu.textContent = fmtUSD(r.landedUnit)
     if (pv) pv.textContent = fmtUSD(r.precioVenta)
-    if (tv) tv.textContent = fmtUSD(r.precioVenta * (r.qty||0))
   })
 
   // Totals row
@@ -2954,10 +2967,11 @@ function saveAsQuote(estado) {
   const cfg = getCalcConfig()
   const modulo = document.getElementById('c2_modulo')?.value || 'A'
   const flete = parseFloat(document.getElementById('c2_flete')?.value) || 0
+  const paraMi = (typeof calcMode !== 'undefined' && calcMode === 'mi')
   const validProds = calcProds.filter(p => p.qty > 0 && p.fob > 0)
-  const results = calcProductLanded(validProds, flete, cfg, modulo)
+  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo)
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
   const totalVenta = results.reduce((s, r) => s + r.precioVenta * (r.qty || 0), 0)
 
   const quotes = getQuotes()
@@ -3424,7 +3438,6 @@ function openQuoteDetailFull(id){
         ${q.costoDetalle?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A6A5E;margin-bottom:6px;font-family:monospace">Composición del costo</div>
         <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden"><tbody>
           ${[['FOB en origen',q.fobTotal||0,'#EFF6FF',pc],['Flete y seguro',(q.flete||0)+((q.fobTotal||0)+(q.flete||0))*0.0045,'#f9fafb','#18180F'],['Tributos aduaneros',q.costoDetalle.total_trib,'#FEF2F2','#991B1B'],['Gastos operativos y banco',q.costoDetalle.total_locales,'#FFFBEB','#92400E'],['Fee de gestión',(q.costoDetalle.total_fee||0)+(q.costoDetalle.iva_fee||0),'#F5F3FF','#5B21B6']].map(([l,v,bg,col])=>`<tr style="background:${bg}"><td style="padding:8px 12px;color:${col};font-weight:500">${l}</td><td style="padding:8px 12px;text-align:right;font-family:monospace;font-weight:700;color:${col}">USD ${Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`).join('')}
-          <tr style="background:${pc};color:#fff"><td style="padding:10px 12px;font-weight:700">LANDED COST TOTAL</td><td style="padding:10px 12px;text-align:right;font-family:monospace;font-weight:700;font-size:15px">USD ${Number(q.landedTotal||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>
           <tr style="background:#15803D;color:#fff"><td style="padding:10px 12px;font-weight:700">TOTAL PRESUPUESTO AL CLIENTE</td><td style="padding:10px 12px;text-align:right;font-family:monospace;font-weight:700;font-size:15px">USD ${Number(q.total||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>
         </tbody></table>`:''}
         ${q.notas?`<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 12px;font-size:12px;margin-bottom:14px;color:#92400E"><strong>Nota:</strong> ${q.notas}</div>`:''}
