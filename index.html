@@ -1466,7 +1466,7 @@ function fmtPct(n,total) { return total?Math.round(n/total*100):0 }
 function detArchivos(o) {
   const files = o.archivos || []
   const FILE_CATS = ['Factura 1','Factura 2','Packing List','BL','FC Despachante','VEP','FC Depósito Fiscal','FC Flete','Factura Cliente','Otros']
-  const FILE_ICONS = { pdf:'📄', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', xlsx:'📊', xls:'📊', default:'📎' }
+  const FILE_ICONS = { pdf:'📄', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', xlsx:'📊', xls:'📊', doc:'📝', docx:'📝', default:'📎' }
   return `<div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${files.length} archivo${files.length!==1?'s':''} adjunto${files.length!==1?'s':''}</div>
     ${FILE_CATS.map(cat => {
@@ -1483,12 +1483,36 @@ function detArchivos(o) {
         <div class="file-item" style="border-top:1px solid var(--border)">
           <div class="file-icon">${FILE_ICONS[f.ext]||FILE_ICONS.default}</div>
           <div class="file-name" style="flex:1">${f.nombre}</div>
-          <div class="file-size">${f.size||''}</div>
-          <button class="btn btn-ghost btn-xs" onclick="deleteFile('${o.id}',${files.indexOf(f)});openDetail('${o.id}')">✕</button>
+          <div class="file-size" style="color:var(--text3);font-size:11px;margin-right:6px">${f.size||''}</div>
+          ${f.data ? `<button class="btn btn-ghost btn-xs" onclick="previewFile('${o.id}',${files.indexOf(f)})" title="Ver archivo">👁️</button>` : ''}
+          <button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteFile('${o.id}',${files.indexOf(f)});openDetail('${o.id}')">✕</button>
         </div>`).join('') : `<div style="padding:7px 12px;font-size:11px;color:var(--text3);font-style:italic">Sin archivo</div>`}
       </div>`
     }).join('')}
   </div>`
+}
+
+function previewFile(orderId, fileIdx) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o) return
+  const f = (o.archivos||[])[fileIdx]
+  if (!f || !f.data) { toast('Sin datos de vista previa'); return }
+  const win = window.open('', '_blank')
+  if (f.ext === 'pdf') {
+    win.document.write(`<!DOCTYPE html><html><head><title>${f.nombre}</title></head><body style="margin:0;padding:0;background:#333">
+      <iframe src="${f.data}" style="width:100%;height:100vh;border:none;"></iframe></body></html>`)
+  } else if (['jpg','jpeg','png','gif','webp'].includes(f.ext)) {
+    win.document.write(`<!DOCTYPE html><html><head><title>${f.nombre}</title></head><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh">
+      <img src="${f.data}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`)
+  } else {
+    // For other files, trigger download
+    const a = win.document.createElement('a')
+    a.href = f.data; a.download = f.nombre; a.click()
+    win.close()
+    toast('Descargando ' + f.nombre)
+    return
+  }
+  win.document.close()
 }
 
 function detTimeline(o) {
@@ -3359,17 +3383,65 @@ function openQuoteDetailFull(id){
       <button class="tab" onclick="qdTab(this,'qd-preview')">Vista cliente</button>
     </div>
     <div id="qd-items">
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+        <div class="card-flat" style="text-align:center">
+          <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">FOB Total</div>
+          <div class="money text-blue" style="font-size:16px">${fmtUSD(q.fobTotal||0)}</div>
+        </div>
+        <div class="card-flat" style="text-align:center">
+          <div style="font-size:10px;color:var(--red-t);font-weight:700;text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Landed Total</div>
+          <div class="money text-red" style="font-size:16px">${fmtUSD(q.landedTotal||0)}</div>
+        </div>
+        <div class="card-flat" style="text-align:center">
+          <div style="font-size:10px;color:var(--green-t);font-weight:700;text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Total cliente</div>
+          <div class="money text-green" style="font-size:16px">${fmtUSD(q.total||0)}</div>
+        </div>
+        <div class="card-flat" style="text-align:center;background:var(--blue-bg)">
+          <div style="font-size:10px;color:var(--blue-t);font-weight:700;text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Múltiplo</div>
+          <div class="money text-blue" style="font-size:16px">${q.multiplo?q.multiplo.toFixed(2)+'x':'—'}</div>
+        </div>
+      </div>
+      <!-- Products table -->
       <div class="table-wrap"><table>
-        <thead><tr><th>Producto</th><th>Cantidad</th><th>FOB unit.</th><th>Landed/un.</th><th>Total</th></tr></thead>
+        <thead><tr>
+          <th>Producto</th><th>Cantidad</th>
+          <th>FOB unit.</th><th>Total FOB</th>
+          <th style="color:var(--red-t)">Landed/un.</th>
+          <th style="color:var(--blue-t)">Precio cliente/un.</th>
+        </tr></thead>
         <tbody>
-          ${(q.items||[]).map(it=>`<tr><td style="font-weight:600">${it.desc||'—'}</td><td class="mono">${Number(it.qty||0).toLocaleString('es-AR')}</td><td class="money">${fmtUSD(it.fob||0)}</td><td class="money text-red">${fmtUSD(it.landedUnit||0)}</td><td class="money text-blue">${fmtUSD((it.qty||0)*(it.fob||0))}</td></tr>`).join('')}
-          <tr style="background:var(--surface2)"><td colspan="4" style="font-weight:700">FOB TOTAL</td><td class="money text-blue" style="font-weight:700">${fmtUSD(q.fobTotal||0)}</td></tr>
+          ${(q.items||[]).map((it,i)=>{
+            const precioCliente = it.landedUnit||it.precioVenta||it.fob||0
+            return `<tr style="background:${i%2===0?'var(--surface2)':''}">
+              <td style="font-weight:600">${it.desc||'—'}</td>
+              <td class="mono">${Number(it.qty||0).toLocaleString('es-AR')}</td>
+              <td class="money">${fmtUSD(it.fob||0)}</td>
+              <td class="money">${fmtUSD((it.qty||0)*(it.fob||0))}</td>
+              <td class="money text-red">${fmtUSD(it.landedUnit||0)}</td>
+              <td class="money text-blue" style="font-weight:700">${fmtUSD(precioCliente)}</td>
+            </tr>`}).join('')}
+          <tr style="background:var(--surface2);font-weight:700">
+            <td colspan="3">TOTALES</td>
+            <td class="money text-blue">${fmtUSD(q.fobTotal||0)}</td>
+            <td class="money text-red">${fmtUSD(q.landedTotal||0)}</td>
+            <td class="money text-green" style="font-size:14px">${fmtUSD(q.total||0)}</td>
+          </tr>
         </tbody>
       </table></div>
-      ${q.fobTotal?`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
-        <div class="card-flat" style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;font-family:var(--mono)">FOB Total</div><div class="money text-blue">${fmtUSD(q.fobTotal)}</div></div>
-        <div class="card-flat" style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;font-family:var(--mono)">Landed Total</div><div class="money text-red">${fmtUSD(q.landedTotal||0)}</div></div>
-        <div class="card-flat" style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;font-family:var(--mono)">Múltiplo</div><div class="money text-blue">${q.multiplo?q.multiplo.toFixed(2)+'x':'—'}</div></div>
+      <!-- Cost breakdown bar -->
+      ${q.costoDetalle&&q.landedTotal?`<div style="margin-top:12px;background:var(--surface2);border-radius:var(--r);padding:10px 14px">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Distribución del costo</div>
+        <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;gap:1px">
+          <div style="flex:${q.fobTotal||0};background:var(--blue)" title="FOB"></div>
+          <div style="flex:${q.flete||0};background:var(--teal)" title="Flete"></div>
+          <div style="flex:${q.costoDetalle.total_trib||0};background:var(--red)" title="Tributos"></div>
+          <div style="flex:${q.costoDetalle.total_locales||0};background:var(--amber)" title="Gastos locales"></div>
+          <div style="flex:${(q.costoDetalle.total_fee||0)+(q.costoDetalle.iva_fee||0)};background:var(--purple)" title="Fee"></div>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:5px;font-size:10px;font-family:var(--mono);flex-wrap:wrap">
+          ${[['FOB',q.fobTotal||0,'var(--blue-t)'],['Flete',q.flete||0,'var(--teal-t)'],['Tributos',q.costoDetalle.total_trib||0,'var(--red-t)'],['Locales',q.costoDetalle.total_locales||0,'var(--amber-t)'],['Fee',(q.costoDetalle.total_fee||0)+(q.costoDetalle.iva_fee||0),'var(--purple-t)']].filter(([,v])=>v>0).map(([l,v,col])=>`<span style="color:${col}">${l} ${q.landedTotal?Math.round(v/q.landedTotal*100):0}%</span>`).join('')}
+        </div>
       </div>`:''}
     </div>
     <div id="qd-costs" style="display:none">
@@ -3437,7 +3509,7 @@ function openQuoteDetailFull(id){
         </table>
         ${q.costoDetalle?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A6A5E;margin-bottom:6px;font-family:monospace">Composición del costo</div>
         <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden"><tbody>
-          ${[['FOB en origen',q.fobTotal||0,'#EFF6FF',pc],['Flete y seguro',(q.flete||0)+((q.fobTotal||0)+(q.flete||0))*0.0045,'#f9fafb','#18180F'],['Tributos aduaneros',q.costoDetalle.total_trib,'#FEF2F2','#991B1B'],['Gastos operativos y banco',q.costoDetalle.total_locales,'#FFFBEB','#92400E'],['Fee de gestión',(q.costoDetalle.total_fee||0)+(q.costoDetalle.iva_fee||0),'#F5F3FF','#5B21B6']].map(([l,v,bg,col])=>`<tr style="background:${bg}"><td style="padding:8px 12px;color:${col};font-weight:500">${l}</td><td style="padding:8px 12px;text-align:right;font-family:monospace;font-weight:700;color:${col}">USD ${Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`).join('')}
+          ${[['FOB en origen',q.fobTotal||0,'#EFF6FF',pc],['Flete y seguro',(q.flete||0)+((q.fobTotal||0)+(q.flete||0))*0.0045,'#f9fafb','#18180F'],['Tributos aduaneros',q.costoDetalle.total_trib,'#FEF2F2','#991B1B'],['Gastos operativos',q.costoDetalle.total_locales,'#FFFBEB','#92400E'],['Fee de gestión',(q.costoDetalle.total_fee||0)+(q.costoDetalle.iva_fee||0),'#F5F3FF','#5B21B6']].map(([l,v,bg,col])=>`<tr style="background:${bg}"><td style="padding:8px 12px;color:${col};font-weight:500">${l}</td><td style="padding:8px 12px;text-align:right;font-family:monospace;font-weight:700;color:${col}">USD ${Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`).join('')}
           <tr style="background:#15803D;color:#fff"><td style="padding:10px 12px;font-weight:700">TOTAL PRESUPUESTO AL CLIENTE</td><td style="padding:10px 12px;text-align:right;font-family:monospace;font-weight:700;font-size:15px">USD ${Number(q.total||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>
         </tbody></table>`:''}
         ${q.notas?`<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 12px;font-size:12px;margin-bottom:14px;color:#92400E"><strong>Nota:</strong> ${q.notas}</div>`:''}
@@ -3505,64 +3577,111 @@ function openEditQuote(id){
   const S_Q={borrador:'Borrador',enviado:'Enviado',aprobado:'Aprobado',rechazado:'Rechazado',en_negociacion:'En negociación'}
 
   el.innerHTML=`<div class="modal modal-lg">
-    <div class="modal-header"><span class="modal-title">Editar — ${q.code}</span><button class="modal-close" onclick="document.getElementById('modal-edit-quote').classList.remove('open')">✕</button></div>
-
-    <!-- Datos generales -->
-    <div class="form-row mb12">
-      <div class="form-group"><label class="label">Cliente</label><select class="select" id="eq-client">${clients.map(c=>`<option value="${c.id}" ${q.clientId===c.id?'selected':''}>${c.nombre}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="label">Estado</label><select class="select" id="eq-estado">${Object.entries(S_Q).map(([k,v])=>`<option value="${k}" ${q.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="modal-header">
+      <span class="modal-title">✏️ Editar presupuesto — ${q.code}</span>
+      <button class="modal-close" onclick="document.getElementById('modal-edit-quote').classList.remove('open')">✕</button>
     </div>
-    <div class="form-row mb12">
+
+    <!-- MODO TOGGLE -->
+    <div style="display:flex;gap:0;background:var(--surface2);border-radius:var(--r);padding:3px;margin-bottom:14px;width:fit-content">
+      <button id="eq-btn-cliente" class="${!q._paraMi?'btn btn-primary':'btn btn-ghost'} btn-sm" style="border-radius:5px" onclick="eqSetMode('cliente')">Para cliente</button>
+      <button id="eq-btn-mi" class="${q._paraMi?'btn btn-primary':'btn btn-ghost'} btn-sm" style="border-radius:5px" onclick="eqSetMode('mi')">Para mí (sin fee)</button>
+    </div>
+    <input type="hidden" id="eq-modo" value="${q._paraMi?'mi':'cliente'}"/>
+
+    <!-- DATOS -->
+    <div class="form-row mb10">
+      <div class="form-group"><label class="label">Cliente</label><select class="select" id="eq-client">${clients.map(cl=>`<option value="${cl.id}" ${q.clientId===cl.id?'selected':''}>${cl.nombre}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Estado</label><select class="select" id="eq-estado">${Object.entries(S_Q).map(([k,v])=>`<option value="${k}" ${q.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Fecha</label><input class="input" type="date" id="eq-fecha" value="${q.fecha||''}"/></div>
       <div class="form-group"><label class="label">Válido hasta</label><input class="input" type="date" id="eq-validez" value="${q.validez||''}"/></div>
     </div>
     <div class="form-row mb12">
       <div class="form-group"><label class="label">Condiciones de pago</label><input class="input" id="eq-cond" value="${q.condPago||''}"/></div>
-      <div class="form-group"><label class="label">Modo</label><select class="select" id="eq-modo"><option value="cliente" ${!q._paraMi?'selected':''}>Para cliente (con fee)</option><option value="mi" ${q._paraMi?'selected':''}>Para mí (sin fee)</option></select></div>
+      <div class="form-group"><label class="label">Notas</label><input class="input" id="eq-notas" value="${q.notas||''}"/></div>
     </div>
-    <div class="form-group mb12"><label class="label">Notas</label><textarea class="textarea" id="eq-notas">${q.notas||''}</textarea></div>
 
     <hr class="divider"/>
-    <div class="flex-between mb8"><span class="section-title">Productos</span><button class="btn btn-ghost btn-sm" onclick="addEqItem()">+ Agregar</button></div>
-    <div style="display:grid;grid-template-columns:2fr 80px 90px 32px;gap:7px;margin-bottom:4px">
-      <span class="label" style="margin:0">Descripción</span><span class="label" style="margin:0">Cantidad</span><span class="label" style="margin:0">FOB unit.</span><span></span>
+
+    <!-- PRODUCTOS -->
+    <div class="flex-between mb8">
+      <span class="section-title">📦 Productos</span>
+      <button class="btn btn-ghost btn-sm" onclick="addEqItem()">+ Agregar</button>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 80px 90px 90px 32px;gap:7px;margin-bottom:4px">
+      <span class="label" style="margin:0;font-size:10px">Descripción</span>
+      <span class="label" style="margin:0;font-size:10px">Cantidad</span>
+      <span class="label" style="margin:0;font-size:10px">FOB unit.</span>
+      <span class="label" style="margin:0;font-size:10px;color:var(--red-t)">Landed/un.</span>
+      <span></span>
     </div>
     <div id="eq-items">${(q.items||[]).map((it,i)=>`
-      <div style="display:grid;grid-template-columns:2fr 80px 90px 32px;gap:7px;margin-bottom:6px" id="eqrow-${i}">
+      <div style="display:grid;grid-template-columns:2fr 80px 90px 90px 32px;gap:7px;margin-bottom:6px" id="eqrow-${i}">
         <input class="input" style="font-size:12px" value="${it.desc||''}"/>
         <input class="input mono" style="font-size:12px" type="number" value="${it.qty||0}" min="0"/>
         <input class="input mono" style="font-size:12px" type="number" value="${it.fob||0}" min="0" step="0.01"/>
+        <input class="input mono" style="font-size:12px" type="number" value="${it.landedUnit||0}" min="0" step="0.01"/>
         <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px" onclick="this.parentElement.remove()">×</button>
       </div>`).join('')}</div>
 
     <hr class="divider"/>
-    <div class="section-title mb10">Flete y gastos</div>
+
+    <!-- FLETE Y MÓDULO -->
+    <div class="section-title mb10">🚢 Flete y módulo de servicio</div>
     <div class="form-row mb12">
-      <div class="form-group"><label class="label">Flete internacional (USD)</label><input class="input mono" type="number" id="eq-flete" value="${q.flete||0}" min="0" step="1"/></div>
-      <div class="form-group"><label class="label">Módulo de fee</label><select class="select" id="eq-modulo"><option value="A" ${q.modulo!=='B'?'selected':''}>Módulo A ($${cfg.fee_fijo_a} + ${cfg.fee_pct_a}%)</option><option value="B" ${q.modulo==='B'?'selected':''}>Módulo B ($${cfg.fee_fijo_b} + ${cfg.fee_pct_b}%)</option></select></div>
+      <div class="form-group">
+        <label class="label">Flete internacional (USD)</label>
+        <input class="input mono" type="number" id="eq-flete" value="${q.flete||0}" min="0" step="1"/>
+      </div>
+      <div class="form-group" id="eq-modulo-group" style="${q._paraMi?'display:none':''}">
+        <label class="label">Módulo de fee</label>
+        <select class="select" id="eq-modulo-sel">
+          <option value="A" ${q.modulo!=='B'?'selected':''}>Módulo A ($${cfg.fee_fijo_a} + ${cfg.fee_pct_a}%)</option>
+          <option value="B" ${q.modulo==='B'?'selected':''}>Módulo B ($${cfg.fee_fijo_b} + ${cfg.fee_pct_b}%)</option>
+        </select>
+      </div>
     </div>
 
-    <div class="section-title mb10">Porcentajes de impuestos</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
-      ${[['eq-di','DI %',cfg.di_pct],['eq-te','TE %',cfg.te_pct],['eq-iva','IVA %',cfg.iva_pct],['eq-iva-ad','IVA Adicional %',cfg.iva_adicional_pct],['eq-gan','Ganancias %',cfg.ganancias_pct],['eq-iibb','IIBB %',cfg.iibb_pct]].map(([id,lbl,val])=>`
-      <div class="form-group"><label class="label" style="font-size:10px">${lbl}</label>
-        <div style="display:flex;align-items:center;gap:3px"><input class="input mono" type="number" id="${id}" value="${val}" min="0" max="100" step="0.1" style="font-size:12px"/><span style="font-size:11px;color:var(--text3)">%</span></div>
+    <hr class="divider"/>
+
+    <!-- IMPUESTOS — como la calculadora -->
+    <div class="section-title mb10">🔴 Porcentajes de impuestos</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+      ${[['eq-di','DI % s/CIF',cfg.di_pct],['eq-te','TE % s/CIF',cfg.te_pct],['eq-iva','IVA % s/base amp.',cfg.iva_pct],['eq-iva-ad','IVA Adicional %',cfg.iva_adicional_pct],['eq-gan','Ganancias %',cfg.ganancias_pct],['eq-iibb','IIBB %',cfg.iibb_pct]].map(([id,lbl,val])=>`
+      <div class="form-group">
+        <label class="label" style="font-size:10px">${lbl}</label>
+        <div style="display:flex;align-items:center;gap:3px">
+          <input class="input mono" type="number" id="${id}" value="${val}" min="0" max="100" step="0.1" style="font-size:12px"/>
+          <span style="font-size:11px;color:var(--text3)">%</span>
+        </div>
       </div>`).join('')}
     </div>
 
-    <div style="background:var(--surface2);border-radius:var(--r);padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:12px;color:var(--text2)">Recalcular landed y total a partir de los productos y porcentajes</span>
+    <!-- RECALCULAR -->
+    <div style="background:var(--blue-bg);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--blue-t)">Recalcular landed y totales</div>
+        <div style="font-size:11px;color:var(--blue-t);opacity:.8">Usá los productos + porcentajes cargados arriba</div>
+      </div>
       <button class="btn btn-primary btn-sm" onclick="eqRecalc()">🔄 Recalcular</button>
     </div>
 
-    <div class="form-row mb12">
-      <div class="form-group"><label class="label">Landed cost total (USD)</label><input class="input mono" type="number" id="eq-landed" value="${q.landedTotal||0}" min="0" step="0.01"/></div>
-      <div class="form-group"><label class="label" style="color:var(--green-t)">Total al cliente (USD)</label><input class="input mono" type="number" id="eq-total" value="${q.total||0}" min="0" step="0.01" style="border-color:var(--green);font-size:15px;font-weight:700"/></div>
+    <!-- TOTALES FINALES -->
+    <div class="form-row mb16">
+      <div class="form-group">
+        <label class="label">Landed cost total calculado (USD)</label>
+        <input class="input mono" type="number" id="eq-landed" value="${q.landedTotal||0}" min="0" step="0.01" style="color:var(--red-t);font-weight:700"/>
+      </div>
+      <div class="form-group">
+        <label class="label" style="color:var(--green-t)">💰 Total al cliente (USD)</label>
+        <input class="input mono" type="number" id="eq-total" value="${q.total||0}" min="0" step="0.01" style="border-color:var(--green);font-size:15px;font-weight:700;color:var(--green-t)"/>
+        <span class="form-hint">Podés ajustarlo manualmente si querés</span>
+      </div>
     </div>
 
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost" onclick="document.getElementById('modal-edit-quote').classList.remove('open')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveEditQuote('${id}')">Guardar y sincronizar con orden</button>
+      <button class="btn btn-primary" onclick="saveEditQuote('${id}')">💾 Guardar${q.orderId?' y sincronizar con orden':''}</button>
     </div>
   </div>`
   el.classList.add('open')
@@ -3578,6 +3697,16 @@ function addEqItem(){
   document.getElementById('eq-items').appendChild(div)
 }
 
+function eqSetMode(mode) {
+  document.getElementById('eq-modo').value = mode
+  const bc = document.getElementById('eq-btn-cliente')
+  const bm = document.getElementById('eq-btn-mi')
+  const mg = document.getElementById('eq-modulo-group')
+  if (bc) bc.className = (mode==='cliente' ? 'btn btn-primary' : 'btn btn-ghost') + ' btn-sm'
+  if (bm) bm.className = (mode==='mi' ? 'btn btn-primary' : 'btn btn-ghost') + ' btn-sm'
+  if (mg) mg.style.display = mode==='mi' ? 'none' : ''
+}
+
 function eqRecalc(){
   const cfg=getCalcConfig()
   const di_pct=parseFloat(document.getElementById('eq-di')?.value)||cfg.di_pct
@@ -3587,8 +3716,8 @@ function eqRecalc(){
   const gan_pct=parseFloat(document.getElementById('eq-gan')?.value)||cfg.ganancias_pct
   const iibb_pct=parseFloat(document.getElementById('eq-iibb')?.value)||cfg.iibb_pct
   const flete=parseFloat(document.getElementById('eq-flete')?.value)||0
-  const modulo=document.getElementById('eq-modulo')?.value||'A'
-  const paraMi=document.getElementById('eq-modo')?.value==='mi'
+  const modulo=document.getElementById('eq-modulo-sel')?.value||document.getElementById('eq-modulo')?.value||'A'
+  const paraMi=(document.getElementById('eq-modo')?.value||'cliente')==='mi'
 
   const fobTotal=Array.from(document.querySelectorAll('[id^="eqrow-"]')).reduce((s,row)=>{
     const inputs=row.querySelectorAll('input');return s+(Number(inputs[1]?.value)||0)*(Number(inputs[2]?.value)||0)},0)
@@ -3611,8 +3740,8 @@ function saveEditQuote(id){
   const gan_pct=parseFloat(document.getElementById('eq-gan')?.value)||cfg.ganancias_pct
   const iibb_pct=parseFloat(document.getElementById('eq-iibb')?.value)||cfg.iibb_pct
   const flete=parseFloat(document.getElementById('eq-flete')?.value)||0
-  const modulo=document.getElementById('eq-modulo')?.value||'A'
-  const paraMi=document.getElementById('eq-modo')?.value==='mi'
+  const modulo=document.getElementById('eq-modulo-sel')?.value||document.getElementById('eq-modulo')?.value||'A'
+  const paraMi=(document.getElementById('eq-modo')?.value||'cliente')==='mi'
 
   const items=Array.from(document.querySelectorAll('[id^="eqrow-"]')).map(row=>{
     const inputs=row.querySelectorAll('input')
