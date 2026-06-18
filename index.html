@@ -1042,6 +1042,9 @@ function kbDrop(e, el, newEstado) {
   saveOrders(orders)
   toast(`${orders[idx].code} → ${S_LABELS[newEstado]}`)
   renderPage()
+  if (newEstado === 'entregado' && oldEstado !== 'entregado') {
+    setTimeout(() => openRealValuesModal(id), 400)
+  }
 }
 
 /* ════════════════════════════════════
@@ -1325,8 +1328,12 @@ function detCostos(o) {
 
   return `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <div style="font-size:12px;color:var(--text2)">${linkedQuote?`Vinculado al presupuesto <strong>${linkedQuote.code}</strong>`:'Sin presupuesto vinculado'}</div>
-    <button class="btn btn-primary btn-sm" onclick="openCostoModal('${o.id}')">+ Agregar costo extra</button>
+    <div style="font-size:12px;color:var(--text2)">${linkedQuote?`Vinculado al presupuesto <strong>${linkedQuote.code}</strong>`:'Sin presupuesto vinculado'}${o._valoresReales?' · <span style="color:var(--green-t);font-weight:700">✓ Valores reales cargados</span>':''}</div>
+    <div style="display:flex;gap:6px">
+      ${o.estado==='entregado'?`<button class="btn btn-sm" onclick="openRealValuesModal('${o.id}')">📦 ${o._valoresReales?'Editar':'Cargar'} valores reales</button>`:''}
+      ${o._valoresReales?`<button class="btn btn-success btn-sm" onclick="openOrderSummaryModal('${o.id}')">📄 Resumen final</button>`:''}
+      <button class="btn btn-primary btn-sm" onclick="openCostoModal('${o.id}')">+ Agregar costo extra</button>
+    </div>
   </div>
 
   <!-- KPI STRIP -->
@@ -1881,12 +1888,17 @@ function saveOrderDraft(estado) {
 function commitOrder(close=true) {
   let orders = getOrders()
   const idx = orders.findIndex(o=>o.id===orderDraft.id)
+  const wasEntregado = idx>=0 ? orders[idx].estado === 'entregado' : false
+  const nowEntregado = orderDraft.estado === 'entregado'
   if(idx>=0) orders[idx]=orderDraft
   else orders.push(orderDraft)
   saveOrders(orders)
   if(close) closeModal('modal-order')
   toast('Orden guardada ✓')
   renderPage()
+  if (nowEntregado && !wasEntregado) {
+    setTimeout(() => openRealValuesModal(orderDraft.id), 400)
+  }
 }
 
 function editOrder() {
@@ -1894,6 +1906,301 @@ function editOrder() {
   if(!o) return
   closeModal('modal-detail')
   openNewOrder(o)
+}
+
+/* ════════════════════════════════════
+   VALORES REALES — al entregar la orden
+════════════════════════════════════ */
+function openRealValuesModal(orderId) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o) return
+  const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
+  const cd = linkedQuote?.costoDetalle || o._costoDetalle || {}
+  const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : (Number(o._flete)||0)
+
+  let el = document.getElementById('modal-real-values')
+  if (!el) { el = document.createElement('div'); el.id='modal-real-values'; el.className='modal-overlay'; el.onclick=e=>{if(e.target===el)el.classList.remove('open')}; document.body.appendChild(el) }
+
+  el.innerHTML = `<div class="modal modal-sm">
+    <div class="modal-header">
+      <span class="modal-title">📦 ${o.code} — Cargar valores reales</span>
+      <button class="modal-close" onclick="document.getElementById('modal-real-values').classList.remove('open')">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:14px">La orden se liberó de aduana. Cargá el monto real en USD de cada concepto según tus comprobantes finales.</p>
+
+    <div style="font-size:10px;font-weight:700;color:var(--teal-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Flete y seguro</div>
+    <div class="form-row mb12">
+      <div class="form-group"><label class="label" style="font-size:10px">Flete marítimo (USD)</label>
+        <input class="input mono" type="number" id="rv-flete" value="${flete}" min="0" step="0.01"/></div>
+      <div class="form-group"><label class="label" style="font-size:10px">Seguro (USD)</label>
+        <input class="input mono" type="number" id="rv-seguro" value="${Number(cd.seguro||0).toFixed(2)}" min="0" step="0.01"/></div>
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--green-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Descuento</div>
+    <div class="form-group mb12">
+      <label class="label" style="font-size:10px">Descuento sobre FOB (USD)</label>
+      <input class="input mono" type="number" id="rv-descuento" value="${Number(cd.descuento||0).toFixed(2)}" min="0" step="0.01"/>
+      <span class="form-hint">Se resta del FOB antes de calcular los impuestos</span>
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--red-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Derechos e impuestos (montos reales)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      ${[['rv-di','Derecho de Importación',cd.di],['rv-te','Tasa de Estadística',cd.te],['rv-iva','IVA Importación',cd.iva],['rv-iva-ad','IVA Adicional',cd.iva_ad],['rv-gan','Perc. Ganancias',cd.ganancias],['rv-iibb','Perc. IIBB',cd.iibb]].map(([id,lbl,val])=>`
+      <div class="form-group"><label class="label" style="font-size:10px">${lbl}</label>
+        <input class="input mono" type="number" id="${id}" value="${Number(val||0).toFixed(2)}" min="0" step="0.01"/>
+      </div>`).join('')}
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--amber-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Gastos operativos (montos reales)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      ${[['rv-desp','Despachante de aduana',null],['rv-thc','THC / BL',null],['rv-alma','Depósito fiscal / Almacenaje',null],['rv-swift','SWIFT / transferencia',null],['rv-flete-int','Flete interno',null],['rv-banco','Gastos bancarios',null],['rv-sim','SIM',10]].map(([id,lbl,def])=>`
+      <div class="form-group"><label class="label" style="font-size:10px">${lbl}</label><input class="input mono" type="number" id="${id}" value="${def!==null?def:0}" min="0" step="0.01"/></div>`).join('')}
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--purple-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Fee de gestión</div>
+    <div class="form-row mb16">
+      <div class="form-group"><label class="label" style="font-size:10px">Fee total (USD)</label>
+        <input class="input mono" type="number" id="rv-fee" value="${Number((cd.total_fee||0)+(cd.iva_fee||0)).toFixed(2)}" min="0" step="0.01"/></div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-real-values').classList.remove('open')">Cerrar (cargo después)</button>
+      <button class="btn btn-primary" onclick="saveRealValues('${orderId}')">Guardar valores reales</button>
+    </div>
+  </div>`
+  el.classList.add('open')
+}
+
+function saveRealValues(orderId) {
+  const orders = getOrders()
+  const oi = orders.findIndex(x=>x.id===orderId)
+  if (oi<0) return
+  const o = orders[oi]
+  const fob = Number(o.fob_total)||0
+
+  const flete = parseFloat(document.getElementById('rv-flete').value)||0
+  const seguro = parseFloat(document.getElementById('rv-seguro').value)||0
+  const descuento = parseFloat(document.getElementById('rv-descuento').value)||0
+  const di = parseFloat(document.getElementById('rv-di').value)||0
+  const te = parseFloat(document.getElementById('rv-te').value)||0
+  const iva = parseFloat(document.getElementById('rv-iva').value)||0
+  const iva_ad = parseFloat(document.getElementById('rv-iva-ad').value)||0
+  const ganancias = parseFloat(document.getElementById('rv-gan').value)||0
+  const iibb = parseFloat(document.getElementById('rv-iibb').value)||0
+  const despachante = parseFloat(document.getElementById('rv-desp').value)||0
+  const thc = parseFloat(document.getElementById('rv-thc').value)||0
+  const alma = parseFloat(document.getElementById('rv-alma').value)||0
+  const swift = parseFloat(document.getElementById('rv-swift').value)||0
+  const flete_int = parseFloat(document.getElementById('rv-flete-int').value)||0
+  const banco = parseFloat(document.getElementById('rv-banco').value)||0
+  const sim = parseFloat(document.getElementById('rv-sim').value)||0
+  const fee = parseFloat(document.getElementById('rv-fee').value)||0
+
+  const fobNeto = Math.max(0, fob - descuento)
+  const total_trib = di+te+iva+iva_ad+ganancias+iibb
+  const total_locales = despachante+thc+alma+swift+flete_int+banco+sim
+  const cif = fobNeto+flete+seguro
+  const landedTotal = cif+total_trib+total_locales+fee
+  const costoDetalle = { di,te,iva,iva_ad,ganancias,iibb,seguro,descuento,fobNeto,total_trib,total_locales,total_fee:fee,iva_fee:0,
+    detalle_locales:{despachante,thc,alma,swift,flete_int,banco,sim} }
+
+  if (o.quoteId) {
+    const quotes = getQuotes()
+    const qi = quotes.findIndex(q=>q.id===o.quoteId)
+    if (qi>=0) { quotes[qi].flete=flete; quotes[qi].landedTotal=landedTotal; quotes[qi].multiplo=fob?landedTotal/fob:0; quotes[qi].costoDetalle=costoDetalle; saveQuotes(quotes) }
+  } else {
+    orders[oi]._flete=flete; orders[oi]._landedTotal=landedTotal; orders[oi]._costoDetalle=costoDetalle
+    saveOrders(orders)
+  }
+  orders[oi]._valoresReales = true
+  saveOrders(orders)
+
+  document.getElementById('modal-real-values').classList.remove('open')
+  toast(`Valores reales guardados ✓ — Landed: ${fmtUSD(landedTotal)}`)
+  if (document.getElementById('modal-detail')?.classList.contains('open')) openDetail(orderId)
+  setTimeout(() => openOrderSummaryModal(orderId), 500)
+}
+
+/* ════════════════════════════════════
+   RESUMEN FINAL DE LA ORDEN — PDF / Excel
+════════════════════════════════════ */
+function openOrderSummaryModal(orderId) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o) return
+  let el = document.getElementById('modal-order-summary')
+  if (!el) { el = document.createElement('div'); el.id='modal-order-summary'; el.className='modal-overlay'; el.onclick=e=>{if(e.target===el)el.classList.remove('open')}; document.body.appendChild(el) }
+  el.innerHTML = `<div class="modal modal-sm" style="text-align:center">
+    <div class="modal-header"><span class="modal-title">✓ Orden completada</span><button class="modal-close" onclick="document.getElementById('modal-order-summary').classList.remove('open')">✕</button></div>
+    <div style="font-size:36px;margin:10px 0">📦✓</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:18px">${o.code} liberada de aduana con sus valores reales cargados. Podés descargar el resumen final de costos.</p>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn btn-primary" onclick="downloadOrderSummaryPDF('${orderId}')">📄 Descargar PDF</button>
+      <button class="btn btn-success" onclick="downloadOrderSummaryExcel('${orderId}')">📊 Descargar Excel</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="document.getElementById('modal-order-summary').classList.remove('open')">Cerrar</button>
+  </div>`
+  el.classList.add('open')
+}
+
+function getOrderSummaryData(orderId) {
+  const o = getOrders().find(x=>x.id===orderId)
+  if (!o) return null
+  const co = getCompanies().find(c=>c.id===o.companyId)
+  const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
+  const cd = linkedQuote?.costoDetalle || o._costoDetalle || {}
+  const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : (Number(o._flete)||0)
+  const fob = Number(o.fob_total)||0
+  const landedTotal = linkedQuote ? (Number(linkedQuote.landedTotal)||0) : (Number(o._landedTotal)||0)
+  const dl = cd.detalle_locales || {}
+
+  // 5 grupos
+  const groups = [
+    {
+      title: 'Flete Marítimo',
+      color: '#1D4ED8',
+      rows: [
+        ['Flete marítimo', flete],
+        ['Seguro', cd.seguro||0],
+      ].filter(([,v])=>v>0)
+    },
+    {
+      title: 'VEP Aduana (Impuestos)',
+      color: '#DC2626',
+      rows: [
+        ['Derecho de Importación (DI)', cd.di||0],
+        ['Tasa de Estadística (TE)', cd.te||0],
+        ['IVA Importación', cd.iva||0],
+        ['IVA Adicional', cd.iva_ad||0],
+        ['Percepción Ganancias', cd.ganancias||0],
+        ['Percepción IIBB', cd.iibb||0],
+      ].filter(([,v])=>v>0)
+    },
+    {
+      title: 'Gastos Locales (Depósito Fiscal)',
+      color: '#D97706',
+      rows: [
+        ['THC / BL', dl.thc||0],
+        ['Depósito fiscal / Almacenaje', dl.alma||0],
+        ['SWIFT / transferencia', dl.swift||0],
+        ['Flete interno', dl.flete_int||0],
+        ['Gastos bancarios', dl.banco||0],
+        ['SIM', dl.sim||0],
+      ].filter(([,v])=>v>0)
+    },
+    {
+      title: 'Despachante',
+      color: '#6D28D9',
+      rows: [
+        ['Honorarios despachante', dl.despachante||0],
+      ].filter(([,v])=>v>0)
+    },
+    {
+      title: 'Fee de Gestión',
+      color: '#059669',
+      rows: [
+        ['Fee de servicio', cd.total_fee||0],
+      ].filter(([,v])=>v>0)
+    },
+  ]
+
+  return { o, co, fob, flete, landedTotal, groups, multiplo: fob?landedTotal/fob:0 }
+}
+
+
+function downloadOrderSummaryExcel(orderId) {
+  const data = getOrderSummaryData(orderId)
+  if (!data) return
+  const { o, co, fob, landedTotal, groups, multiplo } = data
+  let csv = 'RESUMEN FINAL DE ORDEN\n'
+  csv += `Orden,${o.code}\n`
+  csv += `Empresa,${co?.nombre||''}\n`
+  csv += `Proveedor,${o.proveedor||''}\n`
+  csv += `Fecha,${new Date().toISOString().slice(0,10)}\n\n`
+
+  groups.forEach(g => {
+    if (!g.rows.length) return
+    const subtotal = g.rows.reduce((s,[,v])=>s+v, 0)
+    csv += `${g.title.toUpperCase()},${subtotal.toFixed(2)}\n`
+    g.rows.forEach(([l,v]) => { csv += `  "${l}",${v.toFixed(2)}\n` })
+    csv += '\n'
+  })
+
+  csv += `FOB Total,${fob.toFixed(2)}\n`
+  csv += `LANDED COST TOTAL,${landedTotal.toFixed(2)}\n`
+  csv += `Multiplo sobre FOB,${multiplo.toFixed(2)}x\n`
+  const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `Resumen_${o.code}.csv`
+  a.click()
+  toast('Excel descargado ✓')
+}
+
+
+function downloadOrderSummaryPDF(orderId) {
+  const data = getOrderSummaryData(orderId)
+  if (!data) return
+  const { o, co, fob, landedTotal, groups, multiplo } = data
+  const GROUP_COLORS = {
+    'Flete Marítimo': '#1D4ED8',
+    'VEP Aduana (Impuestos)': '#DC2626',
+    'Gastos Locales (Depósito Fiscal)': '#D97706',
+    'Despachante': '#6D28D9',
+    'Fee de Gestión': '#059669',
+  }
+  const win = window.open('', '_blank')
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Resumen ${o.code}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,sans-serif;padding:32px;max-width:620px;margin:auto;color:#18180F;font-size:13px}
+    h1{font-size:20px;margin-bottom:4px}
+    .sub{font-size:11px;color:#6A6A5E;margin-bottom:18px;text-transform:uppercase;letter-spacing:.5px}
+    .meta{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:18px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden}
+    .meta-cell{padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb}
+    .meta-cell:nth-child(even){background:#fff}
+    .meta-k{font-size:10px;color:#6A6A5E;text-transform:uppercase;letter-spacing:.3px}
+    .meta-v{font-size:13px;font-weight:600;margin-top:1px}
+    .group{margin-bottom:12px;border-radius:6px;overflow:hidden;border:1px solid #e5e7eb}
+    .group-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;color:#fff;font-weight:700;font-size:12px}
+    .group-row{display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #f3f4f6;font-size:12px}
+    .group-row:last-child{border-bottom:none}
+    .group-row:nth-child(even){background:#fafafa}
+    .money{font-family:monospace;font-weight:600}
+    .total-box{background:#18180F;color:#fff;border-radius:6px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+    .multiplo{font-size:11px;color:#6A6A5E;margin-top:8px;text-align:right}
+    @media print{body{padding:16px}}
+  </style></head><body>
+    <h1>Resumen Final de Orden</h1>
+    <div class="sub">Costos reales de importación · ${new Date().toLocaleDateString('es-AR')}</div>
+    <div class="meta">
+      <div class="meta-cell"><div class="meta-k">Orden</div><div class="meta-v">${o.code}</div></div>
+      <div class="meta-cell"><div class="meta-k">Empresa</div><div class="meta-v">${co?.nombre||'—'}</div></div>
+      <div class="meta-cell"><div class="meta-k">Proveedor</div><div class="meta-v">${o.proveedor||'—'}</div></div>
+      <div class="meta-cell"><div class="meta-k">FOB Total</div><div class="meta-v">USD ${fob.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
+    </div>
+
+    ${groups.filter(g=>g.rows.length).map(g => {
+      const subtotal = g.rows.reduce((s,[,v])=>s+v, 0)
+      const color = GROUP_COLORS[g.title] || '#374151'
+      return `<div class="group">
+        <div class="group-header" style="background:${color}">
+          <span>${g.title}</span>
+          <span class="money">USD ${subtotal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        </div>
+        ${g.rows.map(([l,v])=>`<div class="group-row"><span style="color:#374151">${l}</span><span class="money">USD ${v.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`).join('')}
+      </div>`
+    }).join('')}
+
+    <div class="total-box">
+      <span style="font-size:14px;font-weight:700">LANDED COST TOTAL</span>
+      <span style="font-family:monospace;font-size:18px;font-weight:700">USD ${landedTotal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+    </div>
+    <div class="multiplo">Múltiplo sobre FOB: <strong>${multiplo.toFixed(2)}x</strong></div>
+  </body></html>`
+  win.document.write(html)
+  win.document.close()
+  setTimeout(()=>win.print(), 400)
+  toast('Abriendo PDF...')
 }
 
 function deleteOrder() {
@@ -2527,10 +2834,11 @@ function getCalcSaves() { return DB.get('calc_saves2') || [] }
 function saveCalcSaves(a) { DB.set('calc_saves2', a) }
 
 // Core landed cost math — takes total FOB and shared costs
-function computeLanded(fob, flete, cfg, modulo, paraMi = false) {
-  const seguro = (fob + flete) * (cfg.seguro_pct / 100)
-  const cif = fob + flete + seguro
-  const banco_ext = fob * (cfg.gasto_banco_ext_pct / 100)
+function computeLanded(fob, flete, cfg, modulo, paraMi = false, descuento = 0) {
+  const fobNeto = Math.max(0, fob - (descuento||0))
+  const seguro = (fobNeto + flete) * (cfg.seguro_pct / 100)
+  const cif = fobNeto + flete + seguro
+  const banco_ext = fobNeto * (cfg.gasto_banco_ext_pct / 100)
   const di = cif * (cfg.di_pct / 100)
   const te = Math.min(cif * (cfg.te_pct / 100), cfg.te_cap)
   const base_amp = cif + di + te
@@ -2541,19 +2849,19 @@ function computeLanded(fob, flete, cfg, modulo, paraMi = false) {
   const total_trib = di + te + iva + iva_ad + ganancias + iibb
   const total_locales = cfg.despachante + cfg.thc_bl + cfg.almacenaje + cfg.swift_local + cfg.flete_interno + banco_ext
   const fee_fijo = paraMi ? 0 : (modulo === 'A' ? cfg.fee_fijo_a : cfg.fee_fijo_b)
-  const fee_pct_val = paraMi ? 0 : fob * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
+  const fee_pct_val = paraMi ? 0 : fobNeto * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
   const total_fee = fee_fijo + fee_pct_val
   const iva_fee = paraMi ? 0 : total_fee * (cfg.iva_fee_pct / 100)
   const landed = cif + total_trib + total_locales + total_fee + iva_fee
-  return { seguro, cif, banco_ext, di, te, base_amp, iva, iva_ad, ganancias, iibb,
+  return { fobNeto, descuento: descuento||0, seguro, cif, banco_ext, di, te, base_amp, iva, iva_ad, ganancias, iibb,
            total_trib, total_locales, fee_fijo, fee_pct_val, total_fee, iva_fee, landed }
 }
 
 // Distribute shared costs proportionally to each product by FOB weight
-function calcProductLanded(products, flete, cfg, modulo, paraMi = false) {
+function calcProductLanded(products, flete, cfg, modulo, paraMi = false, descuento = 0) {
   const fobTotal = products.reduce((s, p) => s + (p.qty||0)*(p.fob||0), 0)
   if (!fobTotal) return products.map(p => ({ ...p, landed_unit: 0, landed_total: 0, multiplo: 0 }))
-  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi, descuento)
   const overheadPerFob = (totals.landed - fobTotal) / fobTotal
 
   return products.map(p => {
@@ -2603,6 +2911,11 @@ function renderCalc() {
           <option value="A">Módulo A — Llave en mano</option>
           <option value="B">Módulo B — Desde pago</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Descuento sobre FOB (USD)</label>
+        <input class="input mono" type="number" id="c2_descuento" min="0" step="1" placeholder="0" oninput="recalcAll()" value=""/>
+        <span class="form-hint">Se resta del FOB antes de calcular impuestos</span>
       </div>
     </div>
   </div>
@@ -2839,6 +3152,7 @@ function resetCalc2() {
   document.getElementById('calc-breakdown').style.display = 'none'
   document.getElementById('calc-prod-totals').style.display = 'none'
   const flete = document.getElementById('c2_flete'); if (flete) flete.value = ''
+  const desc = document.getElementById('c2_descuento'); if (desc) desc.value = ''
   addCalcProd()
 }
 
@@ -2865,6 +3179,7 @@ function recalcAll() {
   const cfg = getCalcConfig()
   const modulo = document.getElementById('c2_modulo')?.value || 'A'
   const flete = parseFloat(document.getElementById('c2_flete')?.value) || 0
+  const descuento = parseFloat(document.getElementById('c2_descuento')?.value) || 0
   const paraMi = (typeof calcMode !== 'undefined' && calcMode === 'mi')
 
   const validProds = calcProds.filter(p => (p.qty > 0) && (p.fob > 0))
@@ -2874,9 +3189,9 @@ function recalcAll() {
     return
   }
 
-  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi)
+  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi, descuento)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi, descuento)
 
   // Update per-product rows
   results.forEach(r => {
@@ -2904,6 +3219,7 @@ function recalcAll() {
 
   const rows = [
     { label: 'FOB mercadería', val: fobTotal, color: 'var(--blue)' },
+    ...(descuento > 0 ? [{ label: 'Descuento sobre FOB', val: -descuento, color: 'var(--green)' }] : []),
     { label: `DI (${cfg.di_pct}%)`, val: totals.di, color: '#DC2626' },
     { label: `TE (${cfg.te_pct}%)`, val: totals.te, color: '#B91C1C' },
     { label: `IVA import. (${cfg.iva_pct}%)`, val: totals.iva, color: '#EF4444' },
@@ -2918,11 +3234,11 @@ function recalcAll() {
       <span style="color:var(--text2);display:flex;align-items:center;gap:6px">
         <span style="width:8px;height:8px;border-radius:2px;background:${r.color};display:inline-block;flex-shrink:0"></span>${r.label}
       </span>
-      <span class="money">${fmtUSD(r.val)}</span>
+      <span class="money" style="${r.val<0?'color:var(--green-t)':''}">${r.val<0?'-':''}${fmtUSD(Math.abs(r.val))}</span>
     </div>`).join('')
 
   const barItems = [
-    { val: fobTotal, color: 'var(--blue)' },
+    { val: totals.fobNeto, color: 'var(--blue)' },
     { val: totals.total_trib, color: 'var(--red)' },
     { val: totals.total_locales, color: 'var(--amber)' },
     { val: totals.total_fee + totals.iva_fee, color: 'var(--purple)' },
@@ -2930,7 +3246,7 @@ function recalcAll() {
   document.getElementById('cb_bar').innerHTML = barItems.map(b =>
     `<div style="flex:${b.val};background:${b.color};min-width:2px"></div>`).join('')
   document.getElementById('cb_legend').innerHTML = [
-    ['FOB', fobTotal, 'var(--blue)'],
+    ['FOB', totals.fobNeto, 'var(--blue)'],
     ['Tributos', totals.total_trib, 'var(--red)'],
     ['Locales', totals.total_locales, 'var(--amber)'],
     ['Fee', totals.total_fee + totals.iva_fee, 'var(--purple)'],
@@ -2991,11 +3307,12 @@ function saveAsQuote(estado) {
   const cfg = getCalcConfig()
   const modulo = document.getElementById('c2_modulo')?.value || 'A'
   const flete = parseFloat(document.getElementById('c2_flete')?.value) || 0
+  const descuento = parseFloat(document.getElementById('c2_descuento')?.value) || 0
   const paraMi = (typeof calcMode !== 'undefined' && calcMode === 'mi')
   const validProds = calcProds.filter(p => p.qty > 0 && p.fob > 0)
-  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi)
+  const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi, descuento)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi)
+  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi, descuento)
   const totalVenta = results.reduce((s, r) => s + r.precioVenta * (r.qty || 0), 0)
 
   const quotes = getQuotes()
@@ -3010,7 +3327,7 @@ function saveAsQuote(estado) {
     notas: document.getElementById('sq-notas').value,
     moneda: 'USD',
     total: totalVenta,
-    fobTotal, flete, modulo,
+    fobTotal, flete, modulo, descuento,
     landedTotal: totals.landed,
     multiplo: fobTotal ? totals.landed / fobTotal : 0,
     items: results.map(r => ({
@@ -3024,6 +3341,7 @@ function saveAsQuote(estado) {
       ganancias: totals.ganancias, iibb: totals.iibb,
       total_trib: totals.total_trib, total_locales: totals.total_locales,
       total_fee: totals.total_fee, iva_fee: totals.iva_fee,
+      descuento, fobNeto: totals.fobNeto,
     },
     pagos: [],
     createdAt: new Date().toISOString().slice(0, 10),
@@ -3806,7 +4124,7 @@ function handleFileSelectCat(event,orderId,categoria){
   reader.onload=e=>{
     const orders=getOrders();const idx=orders.findIndex(o=>o.id===orderId);if(idx<0)return
     if(!orders[idx].archivos)orders[idx].archivos=[]
-    orders[idx].archivos.push({nombre:file.name,ext,size,tipo:ext,categoria,fecha:new Date().toISOString().slice(0,10)})
+    orders[idx].archivos.push({nombre:file.name,ext,size,tipo:ext,categoria,data:e.target.result,fecha:new Date().toISOString().slice(0,10)})
     saveOrders(orders);openDetail(orderId);toast('Archivo adjunto ✓')
   }
   reader.readAsDataURL(file)
