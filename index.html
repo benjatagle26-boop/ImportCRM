@@ -514,16 +514,19 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
   </div>
   <div class="form-row mb12">
     <div class="form-group">
-      <label class="label">Nombre <span class="req">*</span></label>
+      <label class="label">Nombre / Razón social <span class="req">*</span></label>
       <input class="input" id="s-nombre" placeholder="Wenhua Textiles Co."/>
     </div>
     <div class="form-group">
-      <label class="label">Ciudad / País</label>
-      <input class="input" id="s-ciudad" placeholder="Shanghai, China"/>
+      <label class="label">Apodo / Productos</label>
+      <input class="input" id="s-apodo" placeholder="ej: Fábrica de remeras, Chino de telas"/>
     </div>
   </div>
   <div class="form-row mb12">
     <div class="form-group">
+      <label class="label">Ciudad / País (Lugar FOB)</label>
+      <input class="input" id="s-ciudad" placeholder="Shanghai, China"/>
+    </div>
       <label class="label">Categoría</label>
       <select class="select" id="s-cat"><option>Textiles</option><option>Electrónica</option><option>Maquinaria</option><option>Insumos</option><option>General</option></select>
     </div>
@@ -538,7 +541,8 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
   </div>
   <div style="display:flex;gap:8px;justify-content:flex-end">
     <button class="btn btn-ghost" onclick="closeModal('modal-supplier')">Cancelar</button>
-    <button class="btn btn-primary" onclick="saveSupplier()">Guardar</button>
+    <button class="btn btn-primary" id="s-save-btn" onclick="saveSupplier()">Guardar proveedor</button>
+    <input type="hidden" id="s-edit-id" value=""/>
   </div>
 </div>
 </div>
@@ -960,7 +964,7 @@ function renderDashboard() {
                 onclick="openDetail('${o.id}')">
                 <div class="kb-card-code">${o.code}</div>
                 <div class="kb-card-prov">${o.proveedor||'Sin proveedor'}</div>
-                ${o.categoria?`<div style="font-size:10px;color:var(--text3);margin-bottom:3px">${o.categoria}</div>`:''}
+                ${(()=>{const s=getSuppliers().find(x=>x.nombre===o.proveedor);const apodo=s?.apodo||o.categoria;return apodo?`<div style="font-size:10px;color:var(--text3);margin-bottom:3px">${apodo}</div>`:''})()}
                 <div class="kb-card-fob">${fmtUSD(o.fob_total)}</div>
                 ${o.eta?`<div class="kb-card-eta">📅 ${fmtDate(o.eta)} · ${daysUntil(o.eta)}</div>`:''}
                 ${(o.pagos||[]).length>0?`<div style="height:3px;background:rgba(0,0,0,.08);border-radius:2px;margin-top:5px;overflow:hidden"><div style="height:100%;background:${cfg.color};width:${Math.min(100,Math.round(totalPagos(o)/(Number(o.fob_total)||1)*100))}%;border-radius:2px"></div></div>`:''}
@@ -2741,9 +2745,14 @@ function renderSuppliers() {
       const sOrders=orders.filter(o=>o.proveedor===s.nombre)
       const sFOB=sOrders.reduce((sum,o)=>sum+(Number(o.fob_total)||0),0)
       return `<div class="card entity-card">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           <div class="entity-avatar" style="background:var(--purple-bg);color:var(--purple-t)">${init}</div>
-          <div><div style="font-weight:700;font-size:14px">${s.nombre}</div><div style="font-size:11px;color:var(--text3)">${s.ciudad||'—'}</div></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px;line-height:1.2">${s.nombre}</div>
+            ${s.apodo?`<div style="font-size:12px;color:var(--blue-t);font-weight:600;margin-top:1px">${s.apodo}</div>`:''}
+            <div style="font-size:11px;color:var(--text3);margin-top:1px">FOB: ${s.ciudad||'—'}</div>
+          </div>
+          <button class="btn btn-ghost btn-xs" onclick="editSupplier('${s.id}')" title="Editar">✏️</button>
         </div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:3px">Cat: ${s.cat||'—'} · Lead time: ${s.leadtime?s.leadtime+'d':'—'}</div>
         <div style="font-size:12px;color:var(--text2)">${sOrders.length} órdenes · ${fmtUSD(sFOB)}</div>
@@ -2755,14 +2764,55 @@ function renderSuppliers() {
   </div>`
 }
 
+function editSupplier(id) {
+  const s = getSuppliers().find(x=>x.id===id)
+  if (!s) return
+  document.getElementById('s-nombre').value = s.nombre || ''
+  document.getElementById('s-apodo').value = s.apodo || ''
+  document.getElementById('s-ciudad').value = s.ciudad || ''
+  document.getElementById('s-cat').value = s.cat || ''
+  document.getElementById('s-lead').value = s.leadtime || ''
+  document.getElementById('s-contacto').value = s.contacto || ''
+  document.getElementById('s-email').value = s.email || ''
+  document.getElementById('s-edit-id').value = id
+  const title = document.getElementById('modal-supplier').querySelector('.modal-title')
+  if (title) title.textContent = 'Editar proveedor'
+  const btn = document.getElementById('s-save-btn')
+  if (btn) btn.textContent = 'Guardar cambios'
+  openModal('modal-supplier')
+}
+
 function saveSupplier() {
-  const nombre=document.getElementById('s-nombre').value.trim()
-  if(!nombre) return alert('El nombre es requerido')
-  const supps=getSuppliers()
-  supps.push({ id:uid(), nombre, ciudad:document.getElementById('s-ciudad').value, cat:document.getElementById('s-cat').value, leadtime:Number(document.getElementById('s-lead').value)||0, contacto:document.getElementById('s-contacto').value, email:document.getElementById('s-email').value })
-  saveSuppliers(supps); closeModal('modal-supplier')
-  document.getElementById('s-nombre').value=''
-  toast('Proveedor guardado'); renderPage()
+  const nombre = document.getElementById('s-nombre').value.trim()
+  if (!nombre) return alert('El nombre es requerido')
+  const editId = document.getElementById('s-edit-id').value
+  const data = {
+    nombre,
+    apodo: document.getElementById('s-apodo').value.trim(),
+    ciudad: document.getElementById('s-ciudad').value,
+    cat: document.getElementById('s-cat').value,
+    leadtime: Number(document.getElementById('s-lead').value)||0,
+    contacto: document.getElementById('s-contacto').value,
+    email: document.getElementById('s-email').value,
+  }
+  const supps = getSuppliers()
+  if (editId) {
+    const idx = supps.findIndex(s=>s.id===editId)
+    if (idx >= 0) supps[idx] = { ...supps[idx], ...data }
+  } else {
+    supps.push({ id: uid(), ...data })
+  }
+  saveSuppliers(supps)
+  closeModal('modal-supplier')
+  // Reset form
+  ;['s-nombre','s-apodo','s-ciudad','s-lead','s-contacto','s-email'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''})
+  document.getElementById('s-edit-id').value = ''
+  const title = document.getElementById('modal-supplier').querySelector('.modal-title')
+  if (title) title.textContent = 'Nuevo proveedor'
+  const btn = document.getElementById('s-save-btn')
+  if (btn) btn.textContent = 'Guardar proveedor'
+  toast(editId ? 'Proveedor actualizado ✓' : 'Proveedor guardado ✓')
+  renderPage()
 }
 
 /* ════════════════════════════════════
