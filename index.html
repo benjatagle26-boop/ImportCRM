@@ -786,11 +786,15 @@ const COST_COLORS = { naviera:'var(--blue-t)', impuesto:'var(--amber-t)', otros:
    COMPANY SELECTOR
 ════════════════════════════════════ */
 function renderCompanySelector() {
-  const companies = getCompanies()
+  const allCompanies = getCompanies()
+  const companies = (typeof currentUser !== 'undefined' && currentUser && currentUser.rol !== 'admin' && currentUser.empresas !== 'all')
+    ? allCompanies.filter(c => userCanSeeCompany(c.id))
+    : allCompanies
   const co = companies.find(c=>c.id===currentCompanyId) || companies[0]
   if(!co) return
   document.getElementById('co-dot').style.background = co.color
   document.getElementById('co-name').textContent = co.nombre
+  const isAdmin = (typeof currentUser === 'undefined') || !currentUser || currentUser.rol === 'admin'
   const dd = document.getElementById('co-dd')
   dd.innerHTML = companies.map(c=>`
     <div class="company-option" onclick="selectCompany('${c.id}')">
@@ -798,9 +802,9 @@ function renderCompanySelector() {
       <span style="font-family:var(--mono);font-size:12px">${c.nombre}</span>
       ${c.id===currentCompanyId?'<span style="margin-left:auto;color:var(--blue);font-size:10px">✓</span>':''}
     </div>`).join('') +
-    `<div class="company-option" style="border-top:1px solid var(--border);color:var(--text3)" onclick="openModal('modal-company')">
+    (isAdmin ? `<div class="company-option" style="border-top:1px solid var(--border);color:var(--text3)" onclick="openModal('modal-company')">
       <span>+ Nueva empresa</span>
-    </div>`
+    </div>` : '')
 }
 
 function toggleCompanyDD() {
@@ -824,11 +828,17 @@ document.addEventListener('click', e => {
 /* ════════════════════════════════════
    NAVIGATION
 ════════════════════════════════════ */
-const PAGE_TITLES = { dashboard:'Dashboard', calendar:'Calendario', folders:'Carpetas', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas' }
+const PAGE_TITLES = { dashboard:'Dashboard', calendar:'Calendario', folders:'Carpetas', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
 const PAGE_ACTIONS = { dashboard:null, calendar:'+ Nueva alerta', folders:'+ Nueva carpeta', orders:'+ Nueva orden', tracking:null, costs:null, calc:null, clients:'+ Nuevo cliente', quotes:'+ Nuevo presupuesto', suppliers:'+ Proveedor', companies:'+ Empresa' }
 const PAGE_ACTION_FNS = { calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:()=>openModal('modal-supplier'), companies:()=>openModal('modal-company') }
 
 function nav(page) {
+  // Permission guard
+  if (page !== 'users' && typeof currentUser !== 'undefined' && currentUser && !userCanSee(page)) {
+    const firstVisible = ALL_SECTIONS.find(([k])=>userCanSee(k))
+    page = firstVisible ? firstVisible[0] : page
+  }
+  if (page === 'users' && currentUser?.rol !== 'admin') return
   currentPage = page
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'))
   const items = document.querySelectorAll('.nav-item')
@@ -849,7 +859,7 @@ function handleSearch(q) {
 
 function renderPage() {
   const el = document.getElementById('content')
-  const pages = { dashboard:renderDashboard, calendar:renderCalendar, folders:renderFolders, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies }
+  const pages = { dashboard:renderDashboard, calendar:renderCalendar, folders:renderFolders, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
   if(pages[currentPage]) el.innerHTML = pages[currentPage]()
   if(currentPage === 'calc') setTimeout(initCalcPage, 0)
 }
@@ -4244,15 +4254,241 @@ function openQuotePagoModal(quoteId){openQuotePagoModal2(quoteId)}
 function changeQuoteStatus(id,estado){changeQStatus(id,estado)}
 
 /* ════════════════════════════════════
+   SISTEMA DE USUARIOS Y PERMISOS
+════════════════════════════════════ */
+const ALL_SECTIONS = [
+  ['dashboard','📊 Dashboard'],['calendar','📅 Calendario'],['folders','📁 Carpetas'],
+  ['orders','📦 Órdenes'],['tracking','🚢 Tracking'],['costs','💰 Costos'],['calc','🧮 Calculadora'],
+  ['clients','👥 Clientes'],['quotes','📋 Presupuestos'],['suppliers','🏭 Proveedores'],['companies','🏢 Empresas']
+]
+
+function getUsers() { return DB.get('users') || [] }
+function saveUsers(a) { DB.set('users', a) }
+let currentUser = null
+
+function ensureAdminUser() {
+  const users = getUsers()
+  if (users.length === 0) {
+    users.push({ id: uid(), username: 'admin', password: 'admin123', nombre: 'Administrador', rol: 'admin', empresas: 'all', secciones: 'all' })
+    saveUsers(users)
+  }
+}
+
+function doLogin(username, password) {
+  const users = getUsers()
+  const user = users.find(u => u.username.toLowerCase() === username.toLowerCase().trim() && u.password === password)
+  if (!user) return false
+  currentUser = user
+  DB.set('session_user', user.id)
+  return true
+}
+
+function doLogout() { currentUser = null; DB.set('session_user', null); location.reload() }
+
+function userCanSee(section) {
+  if (!currentUser) return false
+  if (currentUser.rol === 'admin' || currentUser.secciones === 'all') return true
+  if (section === 'users') return false
+  return (currentUser.secciones || []).includes(section)
+}
+
+function userCanSeeCompany(companyId) {
+  if (!currentUser) return false
+  if (currentUser.rol === 'admin' || currentUser.empresas === 'all') return true
+  return (currentUser.empresas || []).includes(companyId)
+}
+
+function renderLogin() {
+  document.body.innerHTML = `
+  <div style="position:fixed;inset:0;background:linear-gradient(135deg,#1e3a8a,#1e40af,#3730a3);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Sans',sans-serif">
+    <div style="background:#fff;border-radius:16px;padding:40px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="text-align:center;margin-bottom:28px">
+        <div style="font-size:40px;margin-bottom:8px">📦</div>
+        <div style="font-size:22px;font-weight:700;color:#18180F;font-family:monospace">ImportCRM</div>
+        <div style="font-size:13px;color:#6A6A5E;margin-top:4px">Ingresá para continuar</div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:#6A6A5E;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">Usuario</label>
+        <input id="login-user" style="width:100%;padding:11px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box" placeholder="usuario" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"/>
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:11px;font-weight:700;color:#6A6A5E;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">Contraseña</label>
+        <input id="login-pass" type="password" style="width:100%;padding:11px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box" placeholder="••••••••" onkeydown="if(event.key==='Enter')attemptLogin()"/>
+      </div>
+      <button onclick="attemptLogin()" style="width:100%;padding:12px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Ingresar</button>
+      <div id="login-error" style="color:#DC2626;font-size:12px;text-align:center;margin-top:12px;min-height:16px"></div>
+    </div>
+  </div>`
+}
+
+function attemptLogin() {
+  const u = document.getElementById('login-user').value
+  const p = document.getElementById('login-pass').value
+  if (doLogin(u, p)) { location.reload() }
+  else { document.getElementById('login-error').textContent = 'Usuario o contraseña incorrectos' }
+}
+
+function applyUserPermissions() {
+  if (!currentUser) return
+  document.querySelectorAll('.nav-item').forEach(item => {
+    const onclick = item.getAttribute('onclick') || ''
+    const match = onclick.match(/nav\('(\w+)'\)/)
+    if (match) { item.style.display = userCanSee(match[1]) ? '' : 'none' }
+  })
+  const nav = document.querySelector('.sidebar') || document.querySelector('nav')
+  if (nav && !document.getElementById('user-info-box')) {
+    const box = document.createElement('div')
+    box.id = 'user-info-box'
+    box.style.cssText = 'margin-top:auto;padding:12px 14px;border-top:1px solid var(--border);font-size:12px'
+    box.innerHTML = `
+      <div style="font-weight:700;color:var(--text)">${currentUser.nombre||currentUser.username}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:8px">${currentUser.rol==='admin'?'Administrador':'Usuario'}</div>
+      ${currentUser.rol==='admin'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="nav('users')">👤 Gestionar usuarios</button>`:''}
+      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="doLogout()">Cerrar sesión</button>`
+    nav.appendChild(box)
+  }
+}
+
+function renderUsers() {
+  if (currentUser?.rol !== 'admin') return '<div class="empty"><div class="empty-title">Acceso restringido</div></div>'
+  const users = getUsers()
+  const companies = getCompanies()
+  return `
+  <div class="flex-between mb14">
+    <span class="section-title">Usuarios del sistema</span>
+    <button class="btn btn-primary btn-sm" onclick="openUserModal()">+ Nuevo usuario</button>
+  </div>
+  <div class="entity-grid">
+    ${users.map(u=>{
+      const empresasTxt = u.empresas==='all' ? 'Todas las empresas' : (u.empresas||[]).map(id=>companies.find(c=>c.id===id)?.nombre||'—').join(', ')
+      const seccionesTxt = u.secciones==='all' ? 'Acceso completo' : `${(u.secciones||[]).length} secciones`
+      return `<div class="card">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+          <div class="entity-avatar" style="background:${u.rol==='admin'?'var(--purple-bg)':'var(--blue-bg)'};color:${u.rol==='admin'?'var(--purple-t)':'var(--blue-t)'}">${(u.nombre||u.username).slice(0,2).toUpperCase()}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px">${u.nombre||u.username}</div>
+            <div style="font-size:11px;color:var(--text3)">@${u.username} · ${u.rol==='admin'?'Admin':'Usuario'}</div>
+          </div>
+          <button class="btn btn-ghost btn-xs" onclick="openUserModal('${u.id}')" title="Editar">✏️</button>
+          ${u.id!==currentUser.id?`<button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteUser('${u.id}')" title="Eliminar">🗑</button>`:''}
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">🏢 ${empresasTxt}</div>
+        <div style="font-size:12px;color:var(--text2)">🔑 ${seccionesTxt}</div>
+      </div>`
+    }).join('')}
+  </div>`
+}
+
+function openUserModal(userId) {
+  const editUser = userId ? getUsers().find(u=>u.id===userId) : null
+  const companies = getCompanies()
+  let el = document.getElementById('modal-user')
+  if (!el) { el = document.createElement('div'); el.id='modal-user'; el.className='modal-overlay'; el.onclick=e=>{if(e.target===el)el.classList.remove('open')}; document.body.appendChild(el) }
+  const uEmpresas = editUser?.empresas || 'all'
+  const uSecciones = editUser?.secciones || 'all'
+  const empresasAll = uEmpresas === 'all'
+  const seccionesAll = uSecciones === 'all'
+  const empInc = (id) => empresasAll ? false : (Array.isArray(uEmpresas) && uEmpresas.includes(id))
+  const secInc = (k) => seccionesAll ? false : (Array.isArray(uSecciones) && uSecciones.includes(k))
+  el.innerHTML = `<div class="modal modal-sm">
+    <div class="modal-header"><span class="modal-title">${editUser?'Editar':'Nuevo'} usuario</span><button class="modal-close" onclick="document.getElementById('modal-user').classList.remove('open')">✕</button></div>
+    <div class="form-row mb12">
+      <div class="form-group"><label class="label">Nombre</label><input class="input" id="u-nombre" value="${editUser?.nombre||''}" placeholder="Juan Pérez"/></div>
+      <div class="form-group"><label class="label">Usuario <span class="req">*</span></label><input class="input" id="u-username" value="${editUser?.username||''}" placeholder="juan"/></div>
+    </div>
+    <div class="form-row mb12">
+      <div class="form-group"><label class="label">Contraseña <span class="req">*</span></label><input class="input" id="u-password" value="${editUser?.password||''}" placeholder="••••••"/></div>
+      <div class="form-group"><label class="label">Rol</label>
+        <select class="select" id="u-rol" onchange="toggleUserRolFields()">
+          <option value="user" ${editUser?.rol!=='admin'?'selected':''}>Usuario</option>
+          <option value="admin" ${editUser?.rol==='admin'?'selected':''}>Administrador (ve todo)</option>
+        </select>
+      </div>
+    </div>
+    <div id="u-permisos" style="${editUser?.rol==='admin'?'display:none':''}">
+      <hr class="divider"/>
+      <div class="section-title mb8">🏢 Empresas que puede ver</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="u-emp-all" ${empresasAll?'checked':''} onchange="toggleEmpAll()"/>
+        <span style="font-size:13px;font-weight:600">Todas las empresas</span>
+      </label>
+      <div id="u-emp-list" style="${empresasAll?'opacity:.4;pointer-events:none':''};display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+        ${companies.map(c=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="u-emp-check" value="${c.id}" ${empInc(c.id)?'checked':''}/>${c.nombre}</label>`).join('')}
+      </div>
+      <div class="section-title mb8">🔑 Secciones que puede ver</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="u-sec-all" ${seccionesAll?'checked':''} onchange="toggleSecAll()"/>
+        <span style="font-size:13px;font-weight:600">Acceso completo</span>
+      </label>
+      <div id="u-sec-list" style="${seccionesAll?'opacity:.4;pointer-events:none':''};display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+        ${ALL_SECTIONS.map(([k,l])=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="u-sec-check" value="${k}" ${secInc(k)?'checked':''}/>${l}</label>`).join('')}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-user').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveUser('${userId||''}')">Guardar</button>
+    </div>
+  </div>`
+  el.classList.add('open')
+}
+
+function toggleUserRolFields() { document.getElementById('u-permisos').style.display = document.getElementById('u-rol').value === 'admin' ? 'none' : '' }
+function toggleEmpAll() { const all = document.getElementById('u-emp-all').checked; const l = document.getElementById('u-emp-list'); l.style.opacity = all?'.4':'1'; l.style.pointerEvents = all?'none':'auto' }
+function toggleSecAll() { const all = document.getElementById('u-sec-all').checked; const l = document.getElementById('u-sec-list'); l.style.opacity = all?'.4':'1'; l.style.pointerEvents = all?'none':'auto' }
+
+function saveUser(userId) {
+  const username = document.getElementById('u-username').value.trim()
+  const password = document.getElementById('u-password').value
+  if (!username || !password) return alert('Usuario y contraseña son requeridos')
+  const rol = document.getElementById('u-rol').value
+  let empresas = 'all', secciones = 'all'
+  if (rol !== 'admin') {
+    empresas = document.getElementById('u-emp-all').checked ? 'all' : Array.from(document.querySelectorAll('.u-emp-check:checked')).map(c=>c.value)
+    secciones = document.getElementById('u-sec-all').checked ? 'all' : Array.from(document.querySelectorAll('.u-sec-check:checked')).map(c=>c.value)
+  }
+  const data = { nombre: document.getElementById('u-nombre').value.trim(), username, password, rol, empresas, secciones }
+  const users = getUsers()
+  if (userId) {
+    const idx = users.findIndex(u=>u.id===userId)
+    if (idx>=0) users[idx] = { ...users[idx], ...data }
+  } else {
+    if (users.some(u=>u.username.toLowerCase()===username.toLowerCase())) return alert('Ya existe un usuario con ese nombre')
+    users.push({ id: uid(), ...data })
+  }
+  saveUsers(users)
+  document.getElementById('modal-user').classList.remove('open')
+  toast(userId ? 'Usuario actualizado ✓' : 'Usuario creado ✓')
+  renderPage()
+}
+
+function deleteUser(id) {
+  const u = getUsers().find(x=>x.id===id)
+  if (!u) return
+  if (!confirm(`¿Eliminar al usuario "${u.username}"?`)) return
+  saveUsers(getUsers().filter(x=>x.id!==id))
+  toast('Usuario eliminado'); renderPage()
+}
+
+
+/* ════════════════════════════════════
    INIT — Wait for Firebase then render
 ════════════════════════════════════ */
 let currentCompanyId = null
 
 function _startApp() {
-  currentCompanyId = DB.get('currentCompany') || getCompanies()[0]?.id
+  ensureAdminUser()
+  const sessionId = DB.get('session_user')
+  if (sessionId) currentUser = getUsers().find(u=>u.id===sessionId) || null
+  if (!currentUser) { renderLogin(); return }
+
+  const visibleCompanies = getCompanies().filter(c=>userCanSeeCompany(c.id))
+  currentCompanyId = DB.get('currentCompany')
+  if (!currentCompanyId || !userCanSeeCompany(currentCompanyId)) currentCompanyId = visibleCompanies[0]?.id
+
   renderCompanySelector()
-  renderPage()
-  document.querySelectorAll('.nav-item')[0].classList.add('active')
+  applyUserPermissions()
+  const firstVisible = ALL_SECTIONS.find(([k])=>userCanSee(k))
+  if (firstVisible) { nav(firstVisible[0]) } else { renderPage() }
   document.getElementById('topbar-action').textContent='+ Nueva orden'
 }
 
