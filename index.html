@@ -4279,11 +4279,11 @@ function doLogin(username, password) {
   const user = users.find(u => u.username.toLowerCase() === username.toLowerCase().trim() && u.password === password)
   if (!user) return false
   currentUser = user
-  DB.set('session_user', user.id)
+  try { sessionStorage.setItem('icrm_session', user.id) } catch {}
   return true
 }
 
-function doLogout() { currentUser = null; DB.set('session_user', null); location.reload() }
+function doLogout() { currentUser = null; try { sessionStorage.removeItem('icrm_session') } catch {}; location.reload() }
 
 function userCanSee(section) {
   if (!currentUser) return false
@@ -4477,7 +4477,10 @@ let currentCompanyId = null
 
 function _startApp() {
   ensureAdminUser()
-  const sessionId = DB.get('session_user')
+  // Clear any old shared session that leaked into Firebase
+  if (DB.get('session_user')) { DB.set('session_user', null) }
+  let sessionId = null
+  try { sessionId = sessionStorage.getItem('icrm_session') } catch {}
   if (sessionId) currentUser = getUsers().find(u=>u.id===sessionId) || null
   if (!currentUser) { renderLogin(); return }
 
