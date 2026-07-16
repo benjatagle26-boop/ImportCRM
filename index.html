@@ -535,9 +535,18 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
       <input class="input" type="number" id="s-lead" min="1" placeholder="45"/>
     </div>
   </div>
-  <div class="form-row mb16">
+  <div class="form-row mb12">
     <div class="form-group"><label class="label">Contacto</label><input class="input" id="s-contacto" placeholder="Li Wei"/></div>
     <div class="form-group"><label class="label">Email / WeChat</label><input class="input" id="s-email" placeholder="li@wen.cn"/></div>
+  </div>
+  <div class="form-group mb12">
+    <label class="label">Carpeta de producto</label>
+    <select class="select" id="s-folder"><option value="">Sin carpeta</option></select>
+  </div>
+  <div class="form-group mb12">
+    <label class="label">Notas / Comentarios</label>
+    <div id="s-comments-list" style="margin-bottom:6px"></div>
+    <textarea class="input" id="s-new-comment" rows="2" placeholder="Agregar una nota (ej: subió precios en marzo, buen packaging...)"></textarea>
   </div>
   <div style="display:flex;gap:8px;justify-content:flex-end">
     <button class="btn btn-ghost" onclick="closeModal('modal-supplier')">Cancelar</button>
@@ -688,6 +697,28 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
 </div>
 </div>
 
+<!-- MODAL: SUPPLIER FOLDER -->
+<div class="modal-overlay" id="modal-sfolder">
+<div class="modal modal-sm">
+  <div class="modal-header">
+    <span class="modal-title">Nueva carpeta de producto</span>
+    <button class="modal-close" onclick="closeModal('modal-sfolder')">✕</button>
+  </div>
+  <div class="form-group mb12">
+    <label class="label">Nombre de la carpeta <span class="req">*</span></label>
+    <input class="input" id="sf-nombre" placeholder="ej: Remeras, Audio, Iluminación..."/>
+  </div>
+  <div class="form-group mb16">
+    <label class="label">Descripción</label>
+    <input class="input" id="sf-desc" placeholder="Ej: proveedores de textil de algodón..."/>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="btn btn-ghost" onclick="closeModal('modal-sfolder')">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveSupplierFolder()">Crear carpeta</button>
+  </div>
+</div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -755,6 +786,9 @@ function saveQuotes(a) { DB.set('quotes',a) }
 
 function getFolders() { return DB.get('folders') || [] }
 function saveFolders(a) { DB.set('folders',a) }
+
+function getSupplierFolders() { return DB.get('supplier_folders') || [] }
+function saveSupplierFolders(a) { DB.set('supplier_folders',a) }
 
 function uid() { return Math.random().toString(36).slice(2,10) }
 
@@ -830,7 +864,7 @@ document.addEventListener('click', e => {
 ════════════════════════════════════ */
 const PAGE_TITLES = { dashboard:'Dashboard', calendar:'Calendario', folders:'Carpetas', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
 const PAGE_ACTIONS = { dashboard:null, calendar:'+ Nueva alerta', folders:'+ Nueva carpeta', orders:'+ Nueva orden', tracking:null, costs:null, calc:null, clients:'+ Nuevo cliente', quotes:'+ Nuevo presupuesto', suppliers:'+ Proveedor', companies:'+ Empresa' }
-const PAGE_ACTION_FNS = { calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:()=>openModal('modal-supplier'), companies:()=>openModal('modal-company') }
+const PAGE_ACTION_FNS = { calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:openNewSupplier, companies:()=>openModal('modal-company') }
 
 function nav(page) {
   // Permission guard
@@ -2746,32 +2780,99 @@ function saveQuotePago() {
 /* ════════════════════════════════════
    SUPPLIERS
 ════════════════════════════════════ */
+function supplierCard(s, orders, folders) {
+  const init=(s.nombre||'?').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()
+  const sOrders=orders.filter(o=>o.proveedor===s.nombre)
+  const sFOB=sOrders.reduce((sum,o)=>sum+(Number(o.fob_total)||0),0)
+  const comments=s.comments||[]
+  const lastC=comments.length?comments[comments.length-1]:null
+  const lastTxt=lastC?(lastC.txt||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''
+  const folderOpts=folders.map(f=>`<option value="${f.id}" ${s.folderId===f.id?'selected':''}>${f.nombre}</option>`).join('')
+  return `<div class="card entity-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <div class="entity-avatar" style="background:var(--purple-bg);color:var(--purple-t)">${init}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px;line-height:1.2">${s.nombre}</div>
+        ${s.apodo?`<div style="font-size:12px;color:var(--blue-t);font-weight:600;margin-top:1px">${s.apodo}</div>`:''}
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">FOB: ${s.ciudad||'—'}</div>
+      </div>
+      <button class="btn btn-ghost btn-xs" onclick="editSupplier('${s.id}')" title="Editar">✏️</button>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:3px">Cat: ${s.cat||'—'} · Lead time: ${s.leadtime?s.leadtime+'d':'—'}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${sOrders.length} órdenes · ${fmtUSD(sFOB)}</div>
+    ${lastC?`<div style="font-size:11px;color:var(--text2);background:var(--surface2);border-radius:6px;padding:6px 8px;margin-bottom:8px">💬 ${lastTxt}${comments.length>1?` <span style="opacity:.6">(+${comments.length-1})</span>`:''}</div>`:''}
+    <select class="select" style="padding:4px 6px;font-size:11px" onchange="assignSupplierFolder('${s.id}',this.value)" title="Mover a carpeta">
+      <option value="">📁 Sin carpeta</option>
+      ${folderOpts}
+    </select>
+  </div>`
+}
+
 function renderSuppliers() {
   const supps=getSuppliers()
   const orders=getOrders()
-  return `<div class="entity-grid">
-    ${supps.map(s=>{
-      const init=s.nombre.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
-      const sOrders=orders.filter(o=>o.proveedor===s.nombre)
-      const sFOB=sOrders.reduce((sum,o)=>sum+(Number(o.fob_total)||0),0)
-      return `<div class="card entity-card">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div class="entity-avatar" style="background:var(--purple-bg);color:var(--purple-t)">${init}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:14px;line-height:1.2">${s.nombre}</div>
-            ${s.apodo?`<div style="font-size:12px;color:var(--blue-t);font-weight:600;margin-top:1px">${s.apodo}</div>`:''}
-            <div style="font-size:11px;color:var(--text3);margin-top:1px">FOB: ${s.ciudad||'—'}</div>
-          </div>
-          <button class="btn btn-ghost btn-xs" onclick="editSupplier('${s.id}')" title="Editar">✏️</button>
-        </div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">Cat: ${s.cat||'—'} · Lead time: ${s.leadtime?s.leadtime+'d':'—'}</div>
-        <div style="font-size:12px;color:var(--text2)">${sOrders.length} órdenes · ${fmtUSD(sFOB)}</div>
-      </div>`}).join('')}
-    <div class="card entity-add" onclick="openModal('modal-supplier')">
-      <span style="font-size:26px">🏭</span>
-      <span style="font-size:13px;font-weight:600">Agregar proveedor</span>
+  const folders=getSupplierFolders()
+  const unfiled=supps.filter(s=>!s.folderId || !folders.some(f=>f.id===s.folderId))
+  let html=`<div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="btn btn-ghost btn-sm" onclick="openModal('modal-sfolder')">📁 + Carpeta de producto</button>
+  </div>`
+  folders.forEach(f=>{
+    const list=supps.filter(s=>s.folderId===f.id)
+    html+=`<div style="margin-bottom:22px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span class="section-title">📁 ${f.nombre} <span style="color:var(--text3);font-weight:500">(${list.length})</span></span>
+        ${f.desc?`<span style="font-size:11px;color:var(--text3)">${f.desc}</span>`:''}
+        <button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="delSupplierFolder('${f.id}')" title="Eliminar carpeta">🗑️</button>
+      </div>
+      <div class="entity-grid">
+        ${list.length?list.map(s=>supplierCard(s,orders,folders)).join(''):`<div style="font-size:12px;color:var(--text3);grid-column:1/-1;padding:6px 2px">Todavía no hay proveedores en esta carpeta. Asignalos con el desplegable de cada tarjeta.</div>`}
+      </div>
+    </div>`
+  })
+  html+=`<div style="margin-bottom:12px">
+    <div class="section-title mb12">${folders.length?`Sin carpeta (${unfiled.length})`:'Proveedores'}</div>
+    <div class="entity-grid">
+      ${unfiled.map(s=>supplierCard(s,orders,folders)).join('')}
+      <div class="card entity-add" onclick="openNewSupplier()">
+        <span style="font-size:26px">🏭</span>
+        <span style="font-size:13px;font-weight:600">Agregar proveedor</span>
+      </div>
     </div>
   </div>`
+  return html
+}
+
+function populateSFolderSelect(sel) {
+  const el = document.getElementById('s-folder')
+  if (!el) return
+  const folders = getSupplierFolders()
+  el.innerHTML = '<option value="">Sin carpeta</option>' + folders.map(f=>`<option value="${f.id}">${f.nombre}</option>`).join('')
+  el.value = sel || ''
+}
+
+function renderSCommentsList(comments) {
+  const el = document.getElementById('s-comments-list')
+  if (!el) return
+  const c = comments || []
+  if (!c.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3)">Sin notas todavía.</div>'; return }
+  el.innerHTML = c.slice().reverse().map(x=>{
+    const t = (x.txt||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    const d = x.t ? new Date(x.t).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : ''
+    return `<div style="font-size:11px;color:var(--text2);background:var(--surface2);border-radius:6px;padding:5px 8px;margin-bottom:4px"><span style="color:var(--text3);font-family:var(--mono);font-size:10px">${d}</span> ${t}</div>`
+  }).join('')
+}
+
+function openNewSupplier() {
+  ;['s-nombre','s-apodo','s-ciudad','s-lead','s-contacto','s-email','s-new-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''})
+  const cat=document.getElementById('s-cat'); if(cat) cat.selectedIndex=0
+  document.getElementById('s-edit-id').value = ''
+  populateSFolderSelect('')
+  renderSCommentsList([])
+  const title = document.getElementById('modal-supplier').querySelector('.modal-title')
+  if (title) title.textContent = 'Nuevo proveedor'
+  const btn = document.getElementById('s-save-btn')
+  if (btn) btn.textContent = 'Guardar proveedor'
+  openModal('modal-supplier')
 }
 
 function editSupplier(id) {
@@ -2785,6 +2886,9 @@ function editSupplier(id) {
   document.getElementById('s-contacto').value = s.contacto || ''
   document.getElementById('s-email').value = s.email || ''
   document.getElementById('s-edit-id').value = id
+  document.getElementById('s-new-comment').value = ''
+  populateSFolderSelect(s.folderId)
+  renderSCommentsList(s.comments)
   const title = document.getElementById('modal-supplier').querySelector('.modal-title')
   if (title) title.textContent = 'Editar proveedor'
   const btn = document.getElementById('s-save-btn')
@@ -2796,6 +2900,7 @@ function saveSupplier() {
   const nombre = document.getElementById('s-nombre').value.trim()
   if (!nombre) return alert('El nombre es requerido')
   const editId = document.getElementById('s-edit-id').value
+  const newComment = document.getElementById('s-new-comment').value.trim()
   const data = {
     nombre,
     apodo: document.getElementById('s-apodo').value.trim(),
@@ -2804,18 +2909,24 @@ function saveSupplier() {
     leadtime: Number(document.getElementById('s-lead').value)||0,
     contacto: document.getElementById('s-contacto').value,
     email: document.getElementById('s-email').value,
+    folderId: document.getElementById('s-folder').value,
   }
   const supps = getSuppliers()
   if (editId) {
     const idx = supps.findIndex(s=>s.id===editId)
-    if (idx >= 0) supps[idx] = { ...supps[idx], ...data }
+    if (idx >= 0) {
+      const existing = supps[idx].comments || []
+      const comments = newComment ? [...existing, { t: Date.now(), txt: newComment }] : existing
+      supps[idx] = { ...supps[idx], ...data, comments }
+    }
   } else {
-    supps.push({ id: uid(), ...data })
+    const comments = newComment ? [{ t: Date.now(), txt: newComment }] : []
+    supps.push({ id: uid(), ...data, comments })
   }
   saveSuppliers(supps)
   closeModal('modal-supplier')
   // Reset form
-  ;['s-nombre','s-apodo','s-ciudad','s-lead','s-contacto','s-email'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''})
+  ;['s-nombre','s-apodo','s-ciudad','s-lead','s-contacto','s-email','s-new-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''})
   document.getElementById('s-edit-id').value = ''
   const title = document.getElementById('modal-supplier').querySelector('.modal-title')
   if (title) title.textContent = 'Nuevo proveedor'
@@ -2823,6 +2934,43 @@ function saveSupplier() {
   if (btn) btn.textContent = 'Guardar proveedor'
   toast(editId ? 'Proveedor actualizado ✓' : 'Proveedor guardado ✓')
   renderPage()
+}
+
+function saveSupplierFolder() {
+  const nombre = document.getElementById('sf-nombre').value.trim()
+  if (!nombre) return alert('El nombre de la carpeta es requerido')
+  const folders = getSupplierFolders()
+  folders.push({ id: uid(), nombre, desc: document.getElementById('sf-desc').value.trim() })
+  saveSupplierFolders(folders)
+  document.getElementById('sf-nombre').value = ''
+  document.getElementById('sf-desc').value = ''
+  closeModal('modal-sfolder')
+  toast('Carpeta de producto creada ✓')
+  renderPage()
+}
+
+function assignSupplierFolder(supplierId, folderId) {
+  const supps = getSuppliers()
+  const idx = supps.findIndex(s=>s.id===supplierId)
+  if (idx < 0) return
+  supps[idx].folderId = folderId || ''
+  saveSuppliers(supps)
+  renderPage()
+  toast(folderId ? 'Movido a la carpeta ✓' : 'Quitado de la carpeta')
+}
+
+function delSupplierFolder(folderId) {
+  const folders = getSupplierFolders()
+  const f = folders.find(x=>x.id===folderId)
+  if (!f) return
+  if (!confirm(`¿Eliminar la carpeta "${f.nombre}"? Los proveedores no se borran, quedan sin carpeta.`)) return
+  saveSupplierFolders(folders.filter(x=>x.id!==folderId))
+  const supps = getSuppliers()
+  let changed = false
+  supps.forEach(s=>{ if(s.folderId===folderId){ s.folderId=''; changed=true } })
+  if (changed) saveSuppliers(supps)
+  renderPage()
+  toast('Carpeta eliminada')
 }
 
 /* ════════════════════════════════════
