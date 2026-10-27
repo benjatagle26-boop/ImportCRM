@@ -2037,6 +2037,8 @@ function openRealValuesModal(orderId) {
   const linkedQuote = o.quoteId ? getQuotes().find(q=>q.id===o.quoteId) : null
   const cd = linkedQuote?.costoDetalle || o._costoDetalle || {}
   const flete = linkedQuote ? (Number(linkedQuote.flete)||0) : (Number(o._flete)||0)
+  const dl = cd.detalle_locales || {}
+  const yaCargado = !!o._valoresReales
 
   let el = document.getElementById('modal-real-values')
   if (!el) { el = document.createElement('div'); el.id='modal-real-values'; el.className='modal-overlay'; el.onclick=e=>{if(e.target===el)el.classList.remove('open')}; document.body.appendChild(el) }
@@ -2073,8 +2075,11 @@ function openRealValuesModal(orderId) {
 
     <div style="font-size:10px;font-weight:700;color:var(--amber-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Gastos operativos (montos reales)</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      ${[['rv-desp','Despachante de aduana',null],['rv-thc','THC / BL',null],['rv-alma','Depósito fiscal / Almacenaje',null],['rv-swift','SWIFT / transferencia',null],['rv-flete-int','Flete interno',null],['rv-banco','Gastos bancarios',null],['rv-sim','SIM',10]].map(([id,lbl,def])=>`
-      <div class="form-group"><label class="label" style="font-size:10px">${lbl}</label><input class="input mono" type="number" id="${id}" value="${def!==null?def:0}" min="0" step="0.01"/></div>`).join('')}
+      ${[['rv-desp','Despachante de aduana','despachante',null],['rv-thc','THC / BL','thc',null],['rv-alma','Depósito fiscal / Almacenaje','alma',null],['rv-swift','SWIFT / transferencia','swift',null],['rv-flete-int','Flete interno','flete_int',null],['rv-banco','Gastos bancarios','banco',null],['rv-sim','SIM','sim',10]].map(([id,lbl,key,def])=>{
+        const saved = dl[key]
+        const v = (saved!==undefined && saved!==null) ? saved : (yaCargado ? 0 : (def!==null?def:0))
+        return `<div class="form-group"><label class="label" style="font-size:10px">${lbl}</label><input class="input mono" type="number" id="${id}" value="${v}" min="0" step="0.01"/></div>`
+      }).join('')}
     </div>
 
     <div style="font-size:10px;font-weight:700;color:var(--purple-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Fee de gestión</div>
@@ -2223,14 +2228,18 @@ function getOrderSummaryData(orderId) {
     },
   ]
 
-  return { o, co, fob, flete, landedTotal, groups, multiplo: fob?landedTotal/fob:0 }
+  // Impuestos deducibles (créditos fiscales recuperables): IVA, IVA adicional, perc. Ganancias, IIBB
+  const deducibles = (Number(cd.iva)||0)+(Number(cd.iva_ad)||0)+(Number(cd.ganancias)||0)+(Number(cd.iibb)||0)
+  const totalSinDed = Math.max(0, landedTotal - deducibles)
+
+  return { o, co, fob, flete, landedTotal, groups, multiplo: fob?landedTotal/fob:0, deducibles, totalSinDed }
 }
 
 
 function downloadOrderSummaryExcel(orderId) {
   const data = getOrderSummaryData(orderId)
   if (!data) return
-  const { o, co, fob, landedTotal, groups, multiplo } = data
+  const { o, co, fob, landedTotal, groups, multiplo, totalSinDed } = data
   let csv = 'RESUMEN FINAL DE ORDEN\n'
   csv += `Orden,${o.code}\n`
   csv += `Empresa,${co?.nombre||''}\n`
@@ -2246,7 +2255,8 @@ function downloadOrderSummaryExcel(orderId) {
   })
 
   csv += `FOB Total,${fob.toFixed(2)}\n`
-  csv += `LANDED COST TOTAL,${landedTotal.toFixed(2)}\n`
+  csv += `Costo total sin impuestos deducibles,${totalSinDed.toFixed(2)}\n`
+  csv += `COSTO TOTAL (con impuestos deducibles),${landedTotal.toFixed(2)}\n`
   csv += `Multiplo sobre FOB,${multiplo.toFixed(2)}x\n`
   const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
@@ -2260,7 +2270,7 @@ function downloadOrderSummaryExcel(orderId) {
 function downloadOrderSummaryPDF(orderId) {
   const data = getOrderSummaryData(orderId)
   if (!data) return
-  const { o, co, fob, landedTotal, groups, multiplo } = data
+  const { o, co, fob, landedTotal, groups, multiplo, totalSinDed } = data
   const GROUP_COLORS = {
     'Flete Marítimo': '#1D4ED8',
     'VEP Aduana (Impuestos)': '#DC2626',
@@ -2311,11 +2321,21 @@ function downloadOrderSummaryPDF(orderId) {
       </div>`
     }).join('')}
 
+    <div style="margin-top:16px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;padding:10px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb">
+        <span style="font-size:12px;color:#374151;font-weight:600">FOB (valor mercadería)</span>
+        <span class="money" style="font-size:14px">USD ${fob.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:10px 16px;background:#fff;border-bottom:1px solid #e5e7eb">
+        <span style="font-size:12px;color:#374151;font-weight:600">Costo total sin impuestos deducibles</span>
+        <span class="money" style="font-size:14px">USD ${totalSinDed.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      </div>
+    </div>
     <div class="total-box">
-      <span style="font-size:14px;font-weight:700">LANDED COST TOTAL</span>
+      <span style="font-size:14px;font-weight:700">COSTO TOTAL (con impuestos deducibles)</span>
       <span style="font-family:monospace;font-size:18px;font-weight:700">USD ${landedTotal.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
     </div>
-    <div class="multiplo">Múltiplo sobre FOB: <strong>${multiplo.toFixed(2)}x</strong></div>
+    <div class="multiplo">Múltiplo sobre FOB: <strong>${multiplo.toFixed(2)}x</strong> · El costo sin impuestos deducibles descuenta IVA, IVA adicional, percepción de Ganancias e IIBB (créditos fiscales recuperables).</div>
   </body></html>`
   win.document.write(html)
   win.document.close()
