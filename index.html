@@ -770,14 +770,15 @@ async function onAuthChange(user) {
   catch (e) { if (e?.code !== 'permission-denied') throw e }
   if (!accessSnap || !accessSnap.exists()) { renderNoAccess(email); return }
 
-  const snap = await fb.fs.getDocs(fb.fs.collection(fb.db, 'crm'))
-  snap.forEach(d => { try { window._fbCache[d.id] = JSON.parse(d.data().data) } catch {} })
-  window._fbWrite = (k, v) => fb.fs.setDoc(fb.fs.doc(fb.db, 'crm', k), { data: JSON.stringify(v) })
-    .catch(e => { console.error('Error al guardar', k, e); saveError(e) })
-
   const a = accessSnap.data()
   currentUser = { id: email, email, username: email, nombre: a.nombre || email, rol: a.rol === 'admin' ? 'admin' : 'user',
                   empresas: a.empresas ?? 'all', secciones: a.secciones ?? 'all' }
+
+  // Los datos viejos (todo junto en "crm") se pasan una sola vez al formato nuevo.
+  const mig = await fb.fs.getDoc(fb.fs.doc(fb.db, 'settings', 'migration'))
+  if (!mig.exists()) { currentUser.rol === 'admin' ? renderMigration() : renderMigrationWait(); return }
+
+  await loadData()
   _startApp()
 }
 
@@ -790,13 +791,164 @@ function saveError(e) {
 
 /* ════════════════════════════════════
    DATA LAYER — Firebase Firestore
+   Cada orden, cliente, presupuesto, etc. es su propio documento.
+   El resto del código sigue usando getX()/saveX(lista): saveX compara
+   con lo último sincronizado y escribe solo lo que cambió.
 ════════════════════════════════════ */
+// Colecciones con un documento por registro. company:true = el registro pertenece a una empresa.
+const COLLS = {
+  orders: { company: true }, clients: { company: true }, quotes: { company: true },
+  alerts: { company: true }, folders: { company: true },
+  suppliers: { company: false }, supplier_folders: { company: false },
+}
+// Ajustes que solo puede cambiar un admin.
+const ADMIN_SETTINGS = ['companies', 'users', 'migration']
+
+const _synced = {}   // nombre → Map(id → JSON guardado)
+const _pos = {}      // nombre → Map(id → posición, para mantener el orden de las listas)
+
 const DB = {
   get(k) { return window._fbCache?.[k] ?? null },
   set(k, v) {
-    if (window._fbCache) window._fbCache[k] = v
-    if (window._fbWrite) window._fbWrite(k, v)
+    window._fbCache[k] = v
+    if (COLLS[k]) return syncCollection(k, v)
+    const fb = window._fb
+    fb.fs.setDoc(fb.fs.doc(fb.db, 'settings', k), { data: JSON.stringify(v ?? null), updatedAt: Date.now(), updatedBy: currentUser?.email || '' })
+      .catch(e => { console.error('Error al guardar', k, e); saveError(e) })
   }
+}
+
+function syncCollection(name, arr) {
+  const fb = window._fb
+  const synced = _synced[name], pos = _pos[name]
+  const seen = new Set()
+  arr.forEach((item, idx) => {
+    if (!item || !item.id) return
+    seen.add(item.id)
+    const json = JSON.stringify(item)
+    if (synced.get(item.id) === json) return
+    if (!pos.has(item.id)) {
+      const vals = [...pos.values()]
+      pos.set(item.id, vals.length === 0 ? 0 : idx === 0 && arr.length > 1 ? Math.min(...vals) - 1 : Math.max(...vals) + 1)
+    }
+    synced.set(item.id, json)
+    const payload = { data: json, pos: pos.get(item.id), updatedAt: Date.now(), updatedBy: currentUser?.email || '' }
+    if (COLLS[name].company) payload.companyId = item.companyId ?? null
+    fb.fs.setDoc(fb.fs.doc(fb.db, name, item.id), payload)
+      .catch(e => { console.error('Error al guardar', name, item.id, e); synced.delete(item.id); saveError(e) })
+  })
+  for (const id of [...synced.keys()]) {
+    if (seen.has(id)) continue
+    synced.delete(id); pos.delete(id)
+    fb.fs.deleteDoc(fb.fs.doc(fb.db, name, id)).catch(e => { console.error('Error al borrar', name, id, e); saveError(e) })
+  }
+}
+
+// Empresas que el usuario puede ver ('all' o lista de ids).
+function myCompanyScope() {
+  if (currentUser.rol === 'admin' || currentUser.empresas === 'all') return 'all'
+  return Array.isArray(currentUser.empresas) ? currentUser.empresas : []
+}
+
+// Escucha una colección en vivo. Resuelve cuando llegó la primera carga.
+function listenCollection(name) {
+  const fb = window._fb, { fs } = fb
+  _synced[name] = new Map(); _pos[name] = new Map()
+  const list = window._fbCache[name] = []
+  const scope = COLLS[name].company ? myCompanyScope() : 'all'
+  const queries = scope === 'all'
+    ? [fs.collection(fb.db, name)]
+    : scope.map(cid => fs.query(fs.collection(fb.db, name), fs.where('companyId', '==', cid)))
+  return Promise.all(queries.map(q => new Promise((resolve, reject) => {
+    let first = true
+    fs.onSnapshot(q, snap => {
+      let changed = false
+      snap.docChanges().forEach(ch => {
+        const id = ch.doc.id
+        const i = list.findIndex(x => x.id === id)
+        if (ch.type === 'removed') {
+          if (_synced[name].has(id) || i >= 0) { _synced[name].delete(id); _pos[name].delete(id); if (i >= 0) list.splice(i, 1); changed = true }
+          return
+        }
+        const d = ch.doc.data()
+        _pos[name].set(id, d.pos ?? 0)
+        if (_synced[name].get(id) === d.data) return
+        let item; try { item = JSON.parse(d.data) } catch { return }
+        _synced[name].set(id, d.data)
+        if (i >= 0) list[i] = item
+        else {
+          const p = d.pos ?? 0
+          const at = list.findIndex(x => (_pos[name].get(x.id) ?? 0) > p)
+          at < 0 ? list.push(item) : list.splice(at, 0, item)
+        }
+        changed = true
+      })
+      if (first) { first = false; resolve(); return }
+      if (changed && !snap.metadata.hasPendingWrites) scheduleRender()
+    }, err => {
+      console.error('Error escuchando', name, err)
+      if (first) { first = false; reject(err) } else toast('⚠️ Se cortó la actualización en vivo. Recargá la página.')
+    })
+  })))
+}
+
+async function loadData() {
+  const fb = window._fb
+  const snap = await fb.fs.getDocs(fb.fs.collection(fb.db, 'settings'))
+  snap.forEach(d => { try { window._fbCache[d.id] = JSON.parse(d.data().data) } catch {} })
+  await Promise.all(Object.keys(COLLS).map(listenCollection))
+}
+
+// Cuando otro usuario cambia algo, se redibuja la pantalla, pero nunca
+// con un formulario abierto o mientras alguien escribe.
+let _renderPending = false
+function scheduleRender() { _renderPending = true; tryRender() }
+function tryRender() {
+  if (!_renderPending || !currentUser) return
+  const ae = document.activeElement
+  const typing = ae && ae.closest?.('#content') && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)
+  if (document.querySelector('.modal-overlay.open') || typing || currentPage === 'calc') return
+  _renderPending = false
+  renderCompanySelector(); renderPage()
+}
+setInterval(tryRender, 1500)
+
+/* ── Archivos adjuntos: colección "files", partidos en pedazos ── */
+const FILE_CHUNK = 700000          // caracteres por pedazo (cada documento admite ~1 MB)
+const FILE_MAX_BYTES = 10 * 1024 * 1024
+
+async function storeFile(dataUrl, meta) {
+  const fb = window._fb, { fs } = fb
+  const id = uid() + uid()
+  const n = Math.ceil(dataUrl.length / FILE_CHUNK)
+  await fs.setDoc(fs.doc(fb.db, 'files', id), { ...meta, chunks: n, createdAt: Date.now(), createdBy: currentUser?.email || '' })
+  for (let i = 0; i < n; i++) {
+    await fs.setDoc(fs.doc(fb.db, 'files', id, 'chunks', String(i)), { data: dataUrl.slice(i * FILE_CHUNK, (i + 1) * FILE_CHUNK) })
+  }
+  return id
+}
+
+async function loadFileData(fileId) {
+  const fb = window._fb, { fs } = fb
+  const meta = await fs.getDoc(fs.doc(fb.db, 'files', fileId))
+  if (!meta.exists()) throw new Error('El archivo no existe')
+  const parts = await Promise.all(Array.from({ length: meta.data().chunks }, (_, i) =>
+    fs.getDoc(fs.doc(fb.db, 'files', fileId, 'chunks', String(i))).then(s => s.data().data)))
+  return parts.join('')
+}
+
+async function deleteStoredFile(fileId) {
+  const fb = window._fb, { fs } = fb
+  try {
+    const meta = await fs.getDoc(fs.doc(fb.db, 'files', fileId))
+    if (!meta.exists()) return
+    for (let i = 0; i < meta.data().chunks; i++) await fs.deleteDoc(fs.doc(fb.db, 'files', fileId, 'chunks', String(i)))
+    await fs.deleteDoc(fs.doc(fb.db, 'files', fileId))
+  } catch (e) { console.error('Error al borrar archivo', fileId, e) }
+}
+
+function readAsDataUrl(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file) })
 }
 
 function getCompanies() {
@@ -886,7 +1038,7 @@ function toggleCompanyDD() {
 
 function selectCompany(id) {
   currentCompanyId = id
-  DB.set('currentCompany', id)
+  try { localStorage.setItem('icrm_company', id) } catch {}
   document.getElementById('co-dd').style.display='none'
   renderCompanySelector()
   renderPage()
@@ -1643,7 +1795,7 @@ function detArchivos(o) {
           <div class="file-icon">${FILE_ICONS[f.ext]||FILE_ICONS.default}</div>
           <div class="file-name" style="flex:1">${f.nombre}</div>
           <div class="file-size" style="color:var(--text3);font-size:11px;margin-right:6px">${f.size||''}</div>
-          ${f.data ? `<button class="btn btn-ghost btn-xs" onclick="previewFile('${o.id}',${files.indexOf(f)})" title="Ver archivo">👁️</button>` : ''}
+          ${f.data || f.fileId ? `<button class="btn btn-ghost btn-xs" onclick="previewFile('${o.id}',${files.indexOf(f)})" title="Ver archivo">👁️</button>` : ''}
           <button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteFile('${o.id}',${files.indexOf(f)});openDetail('${o.id}')">✕</button>
         </div>`).join('') : `<div style="padding:7px 12px;font-size:11px;color:var(--text3);font-style:italic">Sin archivo</div>`}
       </div>`
@@ -1651,27 +1803,23 @@ function detArchivos(o) {
   </div>`
 }
 
-function previewFile(orderId, fileIdx) {
+async function previewFile(orderId, fileIdx) {
   const o = getOrders().find(x=>x.id===orderId)
   if (!o) return
   const f = (o.archivos||[])[fileIdx]
-  if (!f || !f.data) { toast('Sin datos de vista previa'); return }
-  const win = window.open('', '_blank')
-  if (f.ext === 'pdf') {
-    win.document.write(`<!DOCTYPE html><html><head><title>${f.nombre}</title></head><body style="margin:0;padding:0;background:#333">
-      <iframe src="${f.data}" style="width:100%;height:100vh;border:none;"></iframe></body></html>`)
-  } else if (['jpg','jpeg','png','gif','webp'].includes(f.ext)) {
-    win.document.write(`<!DOCTYPE html><html><head><title>${f.nombre}</title></head><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh">
-      <img src="${f.data}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`)
-  } else {
-    // For other files, trigger download
-    const a = win.document.createElement('a')
-    a.href = f.data; a.download = f.nombre; a.click()
-    win.close()
-    toast('Descargando ' + f.nombre)
-    return
-  }
-  win.document.close()
+  if (!f || !(f.data || f.fileId)) { toast('Sin datos de vista previa'); return }
+  const viewable = f.ext === 'pdf' || ['jpg','jpeg','png','gif','webp'].includes(f.ext)
+  // La ventana se abre antes de descargar, para que el navegador no la bloquee.
+  const win = viewable ? window.open('', '_blank') : null
+  if (win) win.document.write('<p style="font-family:sans-serif;padding:24px">Cargando archivo…</p>')
+  let dataUrl
+  try { dataUrl = f.data || await loadFileData(f.fileId) }
+  catch (e) { console.error(e); win?.close(); toast('⚠️ No se pudo abrir el archivo'); return }
+  const url = URL.createObjectURL(await (await fetch(dataUrl)).blob())
+  if (win) { win.location.href = url; return }
+  const a = document.createElement('a')
+  a.href = url; a.download = f.nombre; document.body.appendChild(a); a.click(); a.remove()
+  toast('Descargando ' + f.nombre)
 }
 
 function detTimeline(o) {
@@ -2383,6 +2531,8 @@ function downloadOrderSummaryPDF(orderId) {
 
 function deleteOrder() {
   if(!confirm('¿Eliminar esta orden?')) return
+  const del = getOrders().find(o=>o.id===detailOrderId)
+  ;(del?.archivos||[]).forEach(f => f.fileId && deleteStoredFile(f.fileId))
   saveOrders(getOrders().filter(o=>o.id!==detailOrderId))
   closeModal('modal-detail')
   toast('Orden eliminada')
@@ -2544,7 +2694,8 @@ function processFiles(files, orderId) {
 function deleteFile(orderId, idx) {
   const orders=getOrders(); const oi=orders.findIndex(o=>o.id===orderId)
   if(oi<0) return
-  orders[oi].archivos.splice(idx,1)
+  const [removed] = orders[oi].archivos.splice(idx,1)
+  if (removed?.fileId) deleteStoredFile(removed.fileId)
   saveOrders(orders); toast('Archivo eliminado')
 }
 
@@ -4470,18 +4621,21 @@ function saveEditQuote(id){
 /* ════════════════════════════════════
    ARCHIVOS POR CATEGORÍA
 ════════════════════════════════════ */
-function handleFileSelectCat(event,orderId,categoria){
+async function handleFileSelectCat(event,orderId,categoria){
   const file=event.target.files[0];if(!file)return
+  if(file.size>FILE_MAX_BYTES){ toast('⚠️ El archivo supera los 10 MB'); return }
   const ext=file.name.split('.').pop().toLowerCase()
   const size=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+'MB':Math.round(file.size/1024)+'KB'
-  const reader=new FileReader()
-  reader.onload=e=>{
-    const orders=getOrders();const idx=orders.findIndex(o=>o.id===orderId);if(idx<0)return
-    if(!orders[idx].archivos)orders[idx].archivos=[]
-    orders[idx].archivos.push({nombre:file.name,ext,size,tipo:ext,categoria,data:e.target.result,fecha:new Date().toISOString().slice(0,10)})
-    saveOrders(orders);openDetail(orderId);toast('Archivo adjunto ✓')
-  }
-  reader.readAsDataURL(file)
+  const order=getOrders().find(o=>o.id===orderId);if(!order)return
+  toast('Subiendo '+file.name+'…')
+  let fileId
+  try {
+    fileId = await storeFile(await readAsDataUrl(file), { companyId: order.companyId ?? null, orderId, nombre: file.name, ext, size })
+  } catch(e) { console.error(e); saveError(e); return }
+  const orders=getOrders();const idx=orders.findIndex(o=>o.id===orderId);if(idx<0)return
+  if(!orders[idx].archivos)orders[idx].archivos=[]
+  orders[idx].archivos.push({id:fileId,fileId,nombre:file.name,ext,size,tipo:ext,categoria,fecha:new Date().toISOString().slice(0,10)})
+  saveOrders(orders);openDetail(orderId);toast('Archivo adjunto ✓')
 }
 
 /* ════════════════════════════════════
@@ -4689,6 +4843,102 @@ function renderFatal(text) {
   authScreen(`
     <div style="font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px">${esc(text)}</div>
     <button onclick="location.reload()" style="${AUTH_BTN}">Reintentar</button>`)
+}
+
+/* ── Migración única al formato nuevo (un documento por registro) ── */
+function renderMigrationWait() {
+  authScreen(`
+    <div style="font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px">
+      Estamos actualizando el sistema.<br><span style="color:#6A6A5E;font-size:13px">Probá de nuevo en unos minutos.</span>
+    </div>
+    <button onclick="location.reload()" style="${AUTH_BTN};margin-bottom:10px">Reintentar</button>
+    <div style="text-align:center"><button onclick="doLogout()" style="${AUTH_LINK}">Cerrar sesión</button></div>`)
+}
+
+function renderMigration() {
+  authScreen(`
+    <div style="font-size:15px;font-weight:700;text-align:center;margin-bottom:10px">Actualización de datos</div>
+    <div style="font-size:13px;line-height:1.55;color:#3f3f38;margin-bottom:18px">
+      Vamos a pasar tus órdenes, clientes, presupuestos y archivos al formato nuevo:
+      cada registro por separado, con actualización en vivo y permisos por empresa.<br><br>
+      Se descarga un <b>respaldo</b> a tu compu y los datos actuales quedan guardados sin cambios.
+      Hacelo cuando nadie más esté usando el CRM. Tarda menos de un minuto.
+    </div>
+    <button id="mig-btn" onclick="runMigration()" style="${AUTH_BTN}">Actualizar ahora</button>
+    <div style="text-align:center;margin-top:12px"><button onclick="doLogout()" style="${AUTH_LINK}">Cerrar sesión</button></div>
+    <div id="mig-msg" style="${AUTH_MSG};color:#3f3f38"></div>`)
+}
+
+function downloadJson(obj, filename) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' }))
+  const a = document.createElement('a'); a.href = url; a.download = filename
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+async function runMigration() {
+  const fb = window._fb, { fs } = fb
+  const btn = document.getElementById('mig-btn'), msg = document.getElementById('mig-msg')
+  const step = t => { msg.style.color = '#3f3f38'; msg.textContent = t }
+  btn.disabled = true; btn.textContent = 'Actualizando…'
+  try {
+    step('Leyendo los datos actuales…')
+    const legacy = {}
+    const snap = await fs.getDocs(fs.collection(fb.db, 'crm'))
+    snap.forEach(d => { try { legacy[d.id] = JSON.parse(d.data().data) } catch {} })
+
+    step('Descargando el respaldo…')
+    downloadJson(legacy, `importcrm-respaldo-${new Date().toISOString().slice(0,10)}.json`)
+
+    // Archivos: salen de adentro de la orden a la colección "files".
+    const orders = (legacy.orders || []).map(o => ({ ...o, archivos: (o.archivos || []).map(f => ({ ...f })) }))
+    const total = orders.reduce((s, o) => s + o.archivos.filter(f => f.data).length, 0)
+    let n = 0
+    for (const o of orders) for (const f of o.archivos) {
+      if (!f.data) continue
+      step(`Pasando archivos (${++n} de ${total})…`)
+      f.fileId = await storeFile(f.data, { companyId: o.companyId ?? null, orderId: o.id, nombre: f.nombre || 'archivo', ext: f.ext || '', size: f.size || '' })
+      if (!f.id) f.id = f.fileId
+      delete f.data
+    }
+    legacy.orders = orders
+
+    const counts = {}
+    for (const name of Object.keys(COLLS)) {
+      const items = (legacy[name] || []).filter(x => x && x.id)
+      counts[name] = items.length
+      step(`Pasando ${name} (${items.length})…`)
+      for (let i = 0; i < items.length; i += 400) {
+        const b = fs.writeBatch(fb.db)
+        items.slice(i, i + 400).forEach((item, j) => {
+          const payload = { data: JSON.stringify(item), pos: i + j, updatedAt: Date.now(), updatedBy: currentUser.email }
+          if (COLLS[name].company) payload.companyId = item.companyId ?? null
+          b.set(fs.doc(fb.db, name, item.id), payload)
+        })
+        await b.commit()
+      }
+    }
+
+    step('Pasando los ajustes…')
+    const b = fs.writeBatch(fb.db)
+    for (const [k, v] of Object.entries(legacy)) {
+      if (COLLS[k] || k === 'currentCompany' || k === 'session_user') continue
+      b.set(fs.doc(fb.db, 'settings', k), { data: JSON.stringify(v ?? null), updatedAt: Date.now(), updatedBy: currentUser.email })
+    }
+    // Va último: hasta que exista, nadie usa el formato nuevo.
+    b.set(fs.doc(fb.db, 'settings', 'migration'), {
+      data: JSON.stringify({ version: 1, at: new Date().toISOString(), by: currentUser.email, counts, files: total }),
+      updatedAt: Date.now(), updatedBy: currentUser.email })
+    await b.commit()
+
+    step('¡Listo! Entrando…')
+    setTimeout(() => location.reload(), 800)
+  } catch (e) {
+    console.error('Error en la migración', e)
+    btn.disabled = false; btn.textContent = 'Reintentar'
+    msg.style.color = '#DC2626'
+    msg.textContent = 'No se pudo completar: ' + (e?.code || e?.message || e) + '. Tus datos actuales no se tocaron; podés reintentar.'
+  }
 }
 
 async function doLogout() {
@@ -4941,11 +5191,10 @@ let currentCompanyId = null
 function _startApp() {
   // El sistema anterior guardaba contraseñas en texto plano: se borran.
   if (currentUser.rol === 'admin') stripLegacyPasswords()
-  if (DB.get('session_user')) { DB.set('session_user', null) }
   try { sessionStorage.removeItem('icrm_session') } catch {}
 
   const visibleCompanies = getCompanies().filter(c=>userCanSeeCompany(c.id))
-  currentCompanyId = DB.get('currentCompany')
+  try { currentCompanyId = localStorage.getItem('icrm_company') } catch {}
   if (!currentCompanyId || !userCanSeeCompany(currentCompanyId)) currentCompanyId = visibleCompanies[0]?.id
 
   renderCompanySelector()
