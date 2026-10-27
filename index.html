@@ -1447,7 +1447,7 @@ function renderOrdersPage(search='') {
       <thead><tr><th>Orden</th><th>Proveedor</th><th>Cat.</th><th>Estado</th><th>FOB</th><th>Pagado</th><th>Saldo</th><th>CBM</th><th>ETA</th><th>Avance</th></tr></thead>
       <tbody>${orders.map(o=>{
         const pagado=totalPagos(o); const fob=Number(o.fob_total)||0; const saldo=Math.max(0,fob-pagado)
-        const cbm = o.contenedores?.reduce((s,c)=>s+(Number(c.cbm)||0),0)||o.cbm_est||0
+        const cbm = o.contenedores?.reduce((s,c)=>s+(Number(c.cbm)||0),0)||Number(o.cbm_est)||0
         return `<tr onclick="openDetail('${o.id}')">
           <td class="mono" style="font-weight:600">${o.code}</td>
           <td class="td-sm">${o.proveedor||'—'}</td>
@@ -1475,7 +1475,7 @@ function filterOrders(el, estado) {
   if(!tbody) return
   tbody.innerHTML = orders.map(o=>{
     const pagado=totalPagos(o); const fob=Number(o.fob_total)||0; const saldo=Math.max(0,fob-pagado)
-    const cbm = o.contenedores?.reduce((s,c)=>s+(Number(c.cbm)||0),0)||o.cbm_est||0
+    const cbm = o.contenedores?.reduce((s,c)=>s+(Number(c.cbm)||0),0)||Number(o.cbm_est)||0
     return `<tr onclick="openDetail('${o.id}')">
       <td class="mono" style="font-weight:600">${o.code}</td>
       <td class="td-sm">${o.proveedor||'—'}</td><td class="td-sm">${o.categoria||'—'}</td>
