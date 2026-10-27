@@ -10,7 +10,7 @@
 :root {
   --bg:#F4F3EE; --surface:#FFFFFF; --surface2:#EEEDE6; --surface3:#E5E4DB;
   --border:rgba(0,0,0,0.09); --border2:rgba(0,0,0,0.16);
-  --text:#18180F; --text2:#6A6A5E; --text3:#9E9E90;
+  --text:#18180F; --text2:#5C5C51; --text3:#7A7A6E;
   --ink:#18180F;
   --blue:#2563EB; --blue-bg:#EEF3FF; --blue-t:#1D4ED8;
   --green:#16A34A; --green-bg:#F0FDF4; --green-t:#15803D;
@@ -90,9 +90,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 /* ═══ KPI ═══ */
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--shadow)}
-.kpi-label{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
-.kpi-value{font-size:22px;font-weight:700;font-family:var(--mono);letter-spacing:-1px;line-height:1}
-.kpi-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.kpi.clickable{cursor:pointer;transition:box-shadow .15s,transform .15s}
+.kpi.clickable:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.kpi-label{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px}
+.kpi-value{font-size:22px;font-weight:700;font-family:var(--mono);letter-spacing:-.5px;line-height:1.1;white-space:nowrap}
+.kpi-sub{font-size:12px;color:var(--text3);margin-top:5px}
 .kpi-sub.pos{color:var(--green-t)}
 .kpi-sub.warn{color:var(--amber-t)}
 .kpi-sub.neg{color:var(--red-t)}
@@ -100,8 +102,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 /* ═══ TABLE ═══ */
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border);background:var(--surface2);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;font-family:var(--mono)}
-td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+th{text-align:left;padding:9px 12px;font-size:12px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border2);background:var(--surface2);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+td.money,td .money{white-space:nowrap}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover td{background:var(--surface2);cursor:pointer}
 .td-sm{font-size:12px;color:var(--text2)}
@@ -269,7 +272,7 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
 .dot-sep{color:var(--text3);margin:0 4px}
 .tag{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;font-family:var(--mono);background:var(--surface2);color:var(--text2);text-transform:uppercase}
 .mono{font-family:var(--mono)}
-.money{font-family:var(--mono);font-weight:700}
+.money{font-family:var(--mono);font-weight:700;white-space:nowrap}
 .text-blue{color:var(--blue-t)}
 .text-green{color:var(--green-t)}
 .text-amber{color:var(--amber-t)}
@@ -1156,7 +1159,15 @@ function renderDashboard() {
     .kanban-board::-webkit-scrollbar { height:5px; }
     .kanban-board::-webkit-scrollbar-track { background:var(--surface2); border-radius:3px; }
     .kanban-board::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
-    .kb-col { flex:0 0 190px; display:flex; flex-direction:column; min-height:200px; }
+    .kb-col { flex:1 0 190px; display:flex; flex-direction:column; min-height:200px; max-width:280px; }
+    /* Columna vacía: angosta, con el nombre en vertical. Sigue aceptando tarjetas. */
+    .kb-col.collapsed { flex:0 0 46px; min-width:46px; }
+    .kb-col.collapsed .kb-col-header { flex-direction:column; justify-content:flex-start; gap:6px; padding:8px 0; border-radius:8px 8px 0 0; }
+    .kb-col.collapsed .kb-col-header-label { writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
+    .kb-col.collapsed .kb-col-body { padding:0; }
+    .kb-col.collapsed .kb-empty { display:none; }
+    .kb-card-prov, .kb-card-code { font-size:12px; }
+    .kb-card-eta { font-size:11px !important; }
     .kb-col-header { padding:8px 10px; border-radius:8px 8px 0 0; border:1px solid; border-bottom:none; display:flex; align-items:center; justify-content:space-between; }
     .kb-col-header-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; font-family:var(--mono); }
     .kb-col-header-count { font-size:11px; font-weight:700; font-family:var(--mono); opacity:.7; }
@@ -1174,27 +1185,38 @@ function renderDashboard() {
     .kb-empty { font-size:11px; color:var(--text3); text-align:center; padding:16px 8px; font-style:italic; }
   </style>
 
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-label">FOB Total</div><div class="kpi-value">${fmtUSD(totalFOB)}</div><div class="kpi-sub">${orders.length} órdenes</div></div>
-    <div class="kpi"><div class="kpi-label">Activas</div><div class="kpi-value">${active}</div><div class="kpi-sub">${inTransito} en tránsito</div></div>
-    <div class="kpi"><div class="kpi-label">En aduana</div><div class="kpi-value">${inAduana}</div><div class="kpi-sub ${inAduana>0?'warn':''}">${inAduana>0?'Requiere acción':'—'}</div></div>
-    <div class="kpi"><div class="kpi-label">Próximas ETA</div><div class="kpi-value">${upcoming.length}</div><div class="kpi-sub">en tránsito con ETA</div></div>
-  </div>
+  ${(() => {
+    const cf = cashflowSummary()
+    let dq = { total: 0, ordenes: 0 }
+    try { const r = dataQualityIssues(); dq = { total: r.reduce((s, x) => s + x.issues.length, 0), ordenes: r.length } } catch {}
+    const aduana = orders.filter(o => o.estado === 'aduana')
+    const kpi = (label, value, sub, subCls, page, color) => `<div class="kpi clickable" onclick="nav('${page}')" title="Ir a ${PAGE_TITLES[page] || page}">
+      <div class="kpi-label">${label}</div><div class="kpi-value"${color ? ` style="color:${color}"` : ''}>${value}</div><div class="kpi-sub ${subCls || ''}">${sub}</div></div>`
+    return `<div class="kpi-grid">
+      ${kpi('A pagar en los próximos 30 días', fmtUSD(cf.in30), cf.n30 ? `${cf.n30} pago${cf.n30 > 1 ? 's' : ''} · ver flujo de caja →` : 'nada en los próximos 30 días', '', 'cashflow')}
+      ${kpi('Pagos atrasados', fmtUSD(cf.vencido), cf.nVencido ? `${cf.nVencido} con fecha ya pasada — revisar →` : 'nada atrasado', cf.nVencido ? 'neg' : 'pos', 'cashflow', cf.nVencido ? 'var(--red-t)' : '')}
+      ${kpi('En aduana', aduana.length, aduana.length ? esc(aduana.map(o => o.code).slice(0, 3).join(', ')) + (aduana.length > 3 ? '…' : '') : 'ninguna orden en aduana', aduana.length ? 'warn' : '', 'orders')}
+      ${kpi('Datos a completar', dq.total, dq.total ? `en ${dq.ordenes} ${dq.ordenes > 1 ? 'órdenes' : 'orden'} — completar →` : 'todo al día', dq.total ? 'warn' : 'pos', 'dataquality', dq.total ? 'var(--amber-t)' : '')}
+    </div>`
+  })()}
 
   <!-- KANBAN HORIZONTAL -->
-  <div style="margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
+  <div style="margin-bottom:8px;display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <span class="section-title">Pipeline de órdenes</span>
-    <span style="font-size:11px;color:var(--text3)">Arrastrá las tarjetas para cambiar el estado</span>
+    <span style="font-size:12px;color:var(--text2)">${active} activa${active !== 1 ? 's' : ''} · ${inTransito} en tránsito · FOB activo <b class="money">${fmtUSD(orders.filter(o => o.estado !== 'entregado').reduce((s, o) => s + (Number(o.fob_total) || 0), 0))}</b> <span style="color:var(--text3)">· arrastrá las tarjetas para cambiar el estado</span></span>
   </div>
   <div class="kanban-board" id="kanban-board">
     ${kanbanCols.map(({estado, cfg, orders: colOrders, colFOB}) => `
-      <div class="kb-col">
+      <div class="kb-col${colOrders.length === 0 ? ' collapsed' : ''}"${colOrders.length === 0 ? ` title="${cfg.label}: sin órdenes (podés soltar tarjetas acá)"` : ''}>
         <div class="kb-col-header" style="background:${cfg.bg};border-color:${cfg.border};color:${cfg.color}">
+          ${colOrders.length === 0 ? `
+          <span class="kb-col-header-count">0</span>
+          <span class="kb-col-header-label">${cfg.label}</span>` : `
           <span class="kb-col-header-label">${cfg.label}</span>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
             <span class="kb-col-header-count">${colOrders.length}</span>
             ${colFOB>0?`<span class="kb-col-fob" style="color:${cfg.color}">${fmtUSD(colFOB)}</span>`:''}
-          </div>
+          </div>`}
         </div>
         <div class="kb-col-body" style="background:${cfg.bg}20;border-color:${cfg.border}"
           data-estado="${estado}"
@@ -5088,6 +5110,16 @@ function cashflowItems() {
     if (locPend > 0) items.push({ ...base, tipo: 'locales', monto: locPend, fecha: etaish ? addDaysISO(etaish, 7) : null })
   })
   return items
+}
+
+// Totales para el Dashboard, con el mismo criterio que la pantalla de flujo de caja.
+function cashflowSummary() {
+  const items = cashflowItems()
+  const thisWeek = weekStartISO(todayISO()), lim30 = addDaysISO(todayISO(), 30)
+  const venc = items.filter(i => i.fecha && weekStartISO(i.fecha) < thisWeek)
+  const next = items.filter(i => i.fecha && weekStartISO(i.fecha) >= thisWeek && i.fecha <= lim30)
+  const sum = a => a.reduce((s, x) => s + x.monto, 0)
+  return { in30: sum(next), n30: next.length, vencido: sum(venc), nVencido: venc.length }
 }
 
 function weekStartISO(d) { const x = new Date(d + 'T12:00:00'); const dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow); return x.toISOString().slice(0, 10) }
