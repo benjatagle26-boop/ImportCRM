@@ -310,6 +310,7 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
     <div class="nav-item active" onclick="nav('dashboard')">📊 Dashboard</div>
     <div class="nav-item" onclick="nav('calendar')">📅 Calendario</div>
     <div class="nav-item" onclick="nav('pagos')">💳 Pagos</div>
+    <div class="nav-item" onclick="nav('cashflow')">📈 Flujo de caja</div>
     <div class="nav-item" onclick="nav('orders')">📦 Órdenes</div>
     <div class="nav-item" onclick="nav('tracking')">🚢 Tracking</div>
     <div class="nav-item" onclick="nav('costs')">💰 Costos</div>
@@ -318,9 +319,11 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
     <div class="sidebar-section">Comercial</div>
     <div class="nav-item" onclick="nav('clients')">👥 Clientes</div>
     <div class="nav-item" onclick="nav('quotes')">📋 Presupuestos</div>
+    <div class="nav-item" onclick="nav('analysis')">🎯 Estimado vs. real</div>
 
     <div class="sidebar-section">Config</div>
     <div class="nav-item" onclick="nav('suppliers')">🏭 Proveedores</div>
+    <div class="nav-item" onclick="nav('products')">🏷️ Productos</div>
     <div class="nav-item" onclick="nav('companies')">🏢 Empresas</div>
   </nav>
 
@@ -799,7 +802,7 @@ function saveError(e) {
 const COLLS = {
   orders: { company: true }, clients: { company: true }, quotes: { company: true },
   alerts: { company: true }, folders: { company: true },
-  suppliers: { company: false }, supplier_folders: { company: false },
+  suppliers: { company: false }, supplier_folders: { company: false }, products: { company: false },
 }
 // Ajustes que solo puede cambiar un admin.
 const ADMIN_SETTINGS = ['companies', 'users', 'migration']
@@ -977,6 +980,9 @@ function saveQuotes(a) { DB.set('quotes',a) }
 function getFolders() { return DB.get('folders') || [] }
 function saveFolders(a) { DB.set('folders',a) }
 
+function getProducts() { return DB.get('products') || [] }
+function saveProducts(a) { DB.set('products',a) }
+
 function getSupplierFolders() { return DB.get('supplier_folders') || [] }
 function saveSupplierFolders(a) { DB.set('supplier_folders',a) }
 
@@ -1052,9 +1058,9 @@ document.addEventListener('click', e => {
 /* ════════════════════════════════════
    NAVIGATION
 ════════════════════════════════════ */
-const PAGE_TITLES = { dashboard:'Dashboard', calendar:'Calendario', pagos:'Pagos pendientes', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
-const PAGE_ACTIONS = { dashboard:null, calendar:'+ Nueva alerta', folders:'+ Nueva carpeta', orders:'+ Nueva orden', tracking:null, costs:null, calc:null, clients:'+ Nuevo cliente', quotes:'+ Nuevo presupuesto', suppliers:'+ Proveedor', companies:'+ Empresa' }
-const PAGE_ACTION_FNS = { calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:openNewSupplier, companies:()=>openModal('modal-company') }
+const PAGE_TITLES = { cashflow:'Flujo de caja', analysis:'Estimado vs. real', products:'Catálogo de productos', dashboard:'Dashboard', calendar:'Calendario', pagos:'Pagos pendientes', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
+const PAGE_ACTIONS = { products:'+ Producto', dashboard:null, calendar:'+ Nueva alerta', folders:'+ Nueva carpeta', orders:'+ Nueva orden', tracking:null, costs:null, calc:null, clients:'+ Nuevo cliente', quotes:'+ Nuevo presupuesto', suppliers:'+ Proveedor', companies:'+ Empresa' }
+const PAGE_ACTION_FNS = { products:()=>openProductModal(), calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:openNewSupplier, companies:()=>openModal('modal-company') }
 
 function nav(page) {
   // Permission guard
@@ -1066,8 +1072,7 @@ function nav(page) {
   currentPage = page
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'))
   const items = document.querySelectorAll('.nav-item')
-  const pageMap = { dashboard:0, calendar:1, pagos:2, orders:3, tracking:4, costs:5, calc:6, clients:7, quotes:8, suppliers:9, companies:10 }
-  if(items[pageMap[page]]) items[pageMap[page]].classList.add('active')
+  items.forEach(el => { if ((el.getAttribute('onclick')||'').includes("nav('" + page + "')")) el.classList.add('active') })
   document.getElementById('page-title').textContent = PAGE_TITLES[page] || page
   const btn = document.getElementById('topbar-action')
   if(PAGE_ACTIONS[page]) { btn.textContent = PAGE_ACTIONS[page]; btn.style.display=''; }
@@ -1083,7 +1088,7 @@ function handleSearch(q) {
 
 function renderPage() {
   const el = document.getElementById('content')
-  const pages = { dashboard:renderDashboard, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
+  const pages = { cashflow:renderCashflow, analysis:renderAnalysis, products:renderProducts, dashboard:renderDashboard, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
   if(pages[currentPage]) el.innerHTML = pages[currentPage]()
   if(currentPage === 'calc') setTimeout(initCalcPage, 0)
 }
@@ -1201,6 +1206,7 @@ function renderDashboard() {
                 ${(()=>{const s=getSuppliers().find(x=>x.nombre===o.proveedor);const apodo=s?.apodo||o.categoria;return apodo?`<div style="font-size:10px;color:var(--text3);margin-bottom:3px">${apodo}</div>`:''})()}
                 <div class="kb-card-fob">${fmtUSD(o.fob_total)}</div>
                 ${o.eta?`<div class="kb-card-eta">📅 ${fmtDate(o.eta)} · ${daysUntil(o.eta)}</div>`:''}
+                ${(()=>{const m=docsMissing(o);return m.length?`<div style="font-size:10px;color:var(--amber-t);font-weight:700;margin-top:3px" title="${esc(m.map(d=>d.label).join(', '))}">📄 Faltan ${m.length} doc.</div>`:''})()}
                 ${(o.pagos||[]).length>0?`<div style="height:3px;background:rgba(0,0,0,.08);border-radius:2px;margin-top:5px;overflow:hidden"><div style="height:100%;background:${cfg.color};width:${Math.min(100,Math.round(totalPagos(o)/(Number(o.fob_total)||1)*100))}%;border-radius:2px"></div></div>`:''}
               </div>`).join('')}
         </div>
@@ -1277,8 +1283,10 @@ function kbDrop(e, el, newEstado) {
   const oldEstado = orders[idx].estado
   if (oldEstado === newEstado) return
   orders[idx].estado = newEstado
+  trackOrderChange(orders[idx], oldEstado)
   saveOrders(orders)
-  toast(`${orders[idx].code} → ${S_LABELS[newEstado]}`)
+  const faltan = docsMissing(orders[idx])
+  toast(faltan.length ? `${orders[idx].code} → ${S_LABELS[newEstado]} · ⚠️ faltan: ${faltan.map(d=>d.label).join(', ')}` : `${orders[idx].code} → ${S_LABELS[newEstado]}`)
   renderPage()
   if (newEstado === 'entregado' && oldEstado !== 'entregado') {
     setTimeout(() => openRealValuesModal(id), 400)
@@ -1501,7 +1509,7 @@ function openDetail(id) {
 }
 
 function renderDetailTabs(o, active='general') {
-  const TABS = [['general','General'],['productos','Productos'],['pagos','Pagos'],['contenedores','Contenedores'],['costos','Costos'],['archivos','Archivos'],['timeline','Timeline']]
+  const TABS = [['general','General'],['productos','Productos'],['pagos','Pagos'],['contenedores','Contenedores'],['costos','Costos'],['documentos','Documentos'],['archivos','Archivos'],['timeline','Timeline']]
   document.getElementById('det-tabs').innerHTML = TABS.map(([k,l])=>
     `<button class="tab${active===k?' active':''}" onclick="renderDetailTabs(getOrders().find(x=>x.id==='${o.id}'),'${k}')">${l}</button>`
   ).join('')
@@ -1514,6 +1522,7 @@ function detTabContent(o, tab) {
   if(tab==='pagos') return detPagos(o)
   if(tab==='contenedores') return detContenedores(o)
   if(tab==='costos') return detCostos(o)
+  if(tab==='documentos') return detDocumentos(o)
   if(tab==='archivos') return detArchivos(o)
   if(tab==='timeline') return detTimeline(o)
   return ''
@@ -1776,7 +1785,7 @@ function fmtPct(n,total) { return total?Math.round(n/total*100):0 }
 
 function detArchivos(o) {
   const files = o.archivos || []
-  const FILE_CATS = ['Factura 1','Factura 2','Packing List','BL','FC Despachante','VEP','FC Depósito Fiscal','FC Flete','Factura Cliente','Otros']
+  const FILE_CATS = ['Proforma','Factura 1','Factura 2','Packing List','BL','FC Despachante','VEP','FC Depósito Fiscal','FC Flete','Certificado de origen','Factura Cliente','Otros']
   const FILE_ICONS = { pdf:'📄', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', xlsx:'📊', xls:'📊', doc:'📝', docx:'📝', default:'📎' }
   return `<div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${files.length} archivo${files.length!==1?'s':''} adjunto${files.length!==1?'s':''}</div>
@@ -2196,6 +2205,7 @@ function commitOrder(close=true) {
   const idx = orders.findIndex(o=>o.id===orderDraft.id)
   const wasEntregado = idx>=0 ? orders[idx].estado === 'entregado' : false
   const nowEntregado = orderDraft.estado === 'entregado'
+  trackOrderChange(orderDraft, idx>=0 ? orders[idx].estado : null)
   if(idx>=0) orders[idx]=orderDraft
   else orders.push(orderDraft)
   saveOrders(orders)
@@ -2287,6 +2297,7 @@ function saveRealValues(orderId) {
   const oi = orders.findIndex(x=>x.id===orderId)
   if (oi<0) return
   const o = orders[oi]
+  snapshotEstimate(o)
   const fob = Number(o.fob_total)||0
 
   const flete = parseFloat(document.getElementById('rv-flete').value)||0
@@ -3305,18 +3316,23 @@ function saveCompany() {
    Por producto · Presupuesto → Orden
 ════════════════════════════════════ */
 
+const CALC_DEFAULTS = {
+  di_pct: 35, te_pct: 3, te_cap: 500,
+  iva_pct: 21, iva_adicional_pct: 20,
+  ganancias_pct: 6, iibb_pct: 3,
+  seguro_pct: 0.45, gasto_banco_ext_pct: 0.50,
+  despachante: 450, thc_bl: 280, almacenaje: 125,
+  swift_local: 70, flete_interno: 280,
+  fee_fijo_a: 900, fee_pct_a: 4,
+  fee_fijo_b: 550, fee_pct_b: 3,
+  iva_fee_pct: 21,
+}
+// Las tasas guardadas pisan los valores por defecto; las que falten (o no sean números) usan el default.
 function getCalcConfig() {
-  return DB.get('calc_config') || {
-    di_pct: 35, te_pct: 3, te_cap: 500,
-    iva_pct: 21, iva_adicional_pct: 20,
-    ganancias_pct: 6, iibb_pct: 3,
-    seguro_pct: 0.45, gasto_banco_ext_pct: 0.50,
-    despachante: 450, thc_bl: 280, almacenaje: 125,
-    swift_local: 70, flete_interno: 280,
-    fee_fijo_a: 900, fee_pct_a: 4,
-    fee_fijo_b: 550, fee_pct_b: 3,
-    iva_fee_pct: 21,
-  }
+  const saved = DB.get('calc_config') || {}
+  const cfg = { ...CALC_DEFAULTS }
+  for (const [k, v] of Object.entries(saved)) { const n = Number(v); if (v !== '' && v !== null && Number.isFinite(n)) cfg[k] = n }
+  return cfg
 }
 function saveCalcConfig(cfg) { DB.set('calc_config', cfg) }
 function getCalcSaves() { return DB.get('calc_saves2') || [] }
@@ -3347,19 +3363,78 @@ function computeLanded(fob, flete, cfg, modulo, paraMi = false, descuento = 0, b
            total_trib, total_locales, fee_fijo, fee_pct_val, total_fee, iva_fee, landed, bienUso }
 }
 
-// Distribute shared costs proportionally to each product by FOB weight
-function calcProductLanded(products, flete, cfg, modulo, paraMi = false, descuento = 0, bienUso = false) {
-  const fobTotal = products.reduce((s, p) => s + (p.qty||0)*(p.fob||0), 0)
-  if (!fobTotal) return products.map(p => ({ ...p, landed_unit: 0, landed_total: 0, multiplo: 0 }))
-  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi, descuento, bienUso)
-  const overheadPerFob = (totals.landed - fobTotal) / fobTotal
+// Landed cost producto por producto.
+// - Cada producto puede tener su propio derecho (di_pct) e IVA (iva_pct) según su NCM;
+//   si no tiene, usa las tasas generales.
+// - El flete se reparte por volumen cuando todos los productos tienen CBM; si no, por FOB.
+// - IVA, IVA adicional, Ganancias, IIBB e IVA del fee son créditos fiscales: se pagan,
+//   pero un responsable inscripto los recupera. costoReal = landed - créditos.
+function pctOr(v, def) { const n = parseFloat(v); return Number.isFinite(n) ? n : def }
 
-  return products.map(p => {
-    const pFob = (p.qty||0) * (p.fob||0)
-    const landedTotal = pFob + pFob * overheadPerFob
-    const landedUnit = (p.qty||0) > 0 ? landedTotal / p.qty : 0
-    return { ...p, pFob, landedTotal, landedUnit, precioVenta: landedUnit, multiplo: pFob > 0 ? landedTotal/pFob : 0 }
+function computeLandedProducts(products, flete, cfg, modulo, paraMi = false, descuento = 0, bienUso = false) {
+  const rows = products.map(p => ({ p, fob: (Number(p.qty)||0) * (Number(p.fob)||0), cbm: (Number(p.qty)||0) * (Number(p.cbm)||0) }))
+  const fobTotal = rows.reduce((s, r) => s + r.fob, 0)
+  const desc = Math.min(Number(descuento)||0, fobTotal)
+  const byVolume = rows.length > 0 && rows.every(r => r.cbm > 0)
+  const cbmTotal = rows.reduce((s, r) => s + r.cbm, 0)
+  flete = Number(flete) || 0
+
+  rows.forEach(r => {
+    r.share = fobTotal ? r.fob / fobTotal : 0
+    r.fobNeto = r.fob - desc * r.share
+    r.flete = flete * (byVolume ? r.cbm / cbmTotal : r.share)
+    r.seguro = (r.fobNeto + r.flete) * (cfg.seguro_pct / 100)
+    r.cif = r.fobNeto + r.flete + r.seguro
+    r.diPct = pctOr(r.p.di_pct, cfg.di_pct)
+    r.ivaPct = pctOr(r.p.iva_pct, cfg.iva_pct)
   })
+  const cif = rows.reduce((s, r) => s + r.cif, 0)
+  const teTotal = Math.min(cif * (cfg.te_pct / 100), cfg.te_cap)
+  rows.forEach(r => {
+    r.te = cif ? teTotal * r.cif / cif : 0
+    r.di = r.cif * r.diPct / 100
+    r.base = r.cif + r.di + r.te
+    r.iva = r.base * r.ivaPct / 100
+    // Con IVA reducido (10,5%) la percepción de IVA adicional es la mitad.
+    const ivaAdPct = r.ivaPct === 10.5 ? cfg.iva_adicional_pct / 2 : cfg.iva_adicional_pct
+    r.iva_ad = bienUso ? 0 : r.base * ivaAdPct / 100
+    r.ganancias = bienUso ? 0 : r.base * cfg.ganancias_pct / 100
+    r.iibb = bienUso ? 0 : r.base * cfg.iibb_pct / 100
+  })
+  const sum = k => rows.reduce((s, r) => s + r[k], 0)
+  const fobNeto = fobTotal - desc
+  const di = sum('di'), te = sum('te'), iva = sum('iva'), iva_ad = sum('iva_ad'), ganancias = sum('ganancias'), iibb = sum('iibb')
+  const total_trib = di + te + iva + iva_ad + ganancias + iibb
+  const banco_ext = fobNeto * (cfg.gasto_banco_ext_pct / 100)
+  const total_locales = cfg.despachante + cfg.thc_bl + cfg.almacenaje + cfg.swift_local + cfg.flete_interno + banco_ext
+  const fee_fijo = paraMi ? 0 : (modulo === 'A' ? cfg.fee_fijo_a : cfg.fee_fijo_b)
+  const fee_pct_val = paraMi ? 0 : fobNeto * ((modulo === 'A' ? cfg.fee_pct_a : cfg.fee_pct_b) / 100)
+  const total_fee = fee_fijo + fee_pct_val
+  const iva_fee = paraMi ? 0 : total_fee * (cfg.iva_fee_pct / 100)
+  const landed = cif + total_trib + total_locales + total_fee + iva_fee
+  const creditos = iva + iva_ad + ganancias + iibb + iva_fee
+  const mixedRates = new Set(rows.map(r => r.diPct + '/' + r.ivaPct)).size > 1
+
+  const items = rows.map(r => {
+    const overhead = r.share * (total_locales + total_fee + iva_fee)
+    const landedTotal = r.cif + r.di + r.te + r.iva + r.iva_ad + r.ganancias + r.iibb + overhead
+    const creditosI = r.iva + r.iva_ad + r.ganancias + r.iibb + r.share * iva_fee
+    const qty = Number(r.p.qty) || 0
+    return { ...r.p, pFob: r.fob, flete_asignado: r.flete, di_aplicado: r.diPct, iva_aplicado: r.ivaPct,
+      landedTotal, landedUnit: qty ? landedTotal / qty : 0, realUnit: qty ? (landedTotal - creditosI) / qty : 0,
+      precioVenta: qty ? landedTotal / qty : 0, multiplo: r.fob ? landedTotal / r.fob : 0 }
+  })
+  const totals = { fobNeto, descuento: desc, seguro: sum('seguro'), cif, banco_ext, di, te, base_amp: sum('base'),
+    iva, iva_ad, ganancias, iibb, total_trib, total_locales, fee_fijo, fee_pct_val, total_fee, iva_fee, landed, bienUso,
+    creditos, costoReal: landed - creditos, fleteReparto: byVolume ? 'volumen' : 'fob', mixedRates }
+  return { totals, items }
+}
+
+// Compatibilidad: devuelve la lista de productos con .totals adjunto.
+function calcProductLanded(products, flete, cfg, modulo, paraMi = false, descuento = 0, bienUso = false) {
+  const { totals, items } = computeLandedProducts(products, flete, cfg, modulo, paraMi, descuento, bienUso)
+  items.totals = totals
+  return items
 }
 
 let calcProds = []
@@ -3433,7 +3508,9 @@ function renderCalc() {
       <span></span>
     </div>
 
+    <datalist id="calc-catalog"></datalist>
     <div id="calc-prod-rows"></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:4px">Segunda línea de cada producto: NCM, derecho %, IVA %, volumen y peso por unidad. Vacío = usa la tasa general. Con volumen en todos los productos, el flete se reparte por volumen.</div>
 
     <!-- Totals row -->
     <div id="calc-prod-totals" style="display:none;border-top:2px solid var(--border2);margin-top:8px;padding-top:10px">
@@ -3602,33 +3679,86 @@ function renderCalc() {
 
 function addCalcProd(existing) {
   calcProdCount++
-  const id = 'cp' + calcProdCount
-  const p = existing || { id, desc: '', qty: '', fob: '' }
-  if (!existing) calcProds.push({ id, desc: '', qty: 0, fob: 0 })
+  const id = existing?.id || ('cp' + Date.now().toString(36) + calcProdCount)
+  const p = existing || { id, desc: '', qty: 0, fob: 0 }
+  if (!existing) calcProds.push(p)
+  const cfg = getCalcConfig()
 
   const row = document.createElement('div')
   row.id = 'crow-' + id
-  row.style.cssText = 'display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;margin-bottom:6px;align-items:center'
+  row.style.cssText = 'margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--border)'
   row.innerHTML = `
-    <input class="input" style="font-size:12px" value="${p.desc||''}" placeholder="Descripción del producto" oninput="updateCalcProd('${id}','desc',this.value)"/>
-    <input class="input mono" style="font-size:12px" type="number" min="0" value="${p.qty||''}" placeholder="0" oninput="updateCalcProd('${id}','qty',this.value)"/>
-    <input class="input mono" style="font-size:12px" type="number" min="0" step="0.01" value="${p.fob||''}" placeholder="0.00" oninput="updateCalcProd('${id}','fob',this.value)"/>
-    <div class="money text-red" style="font-size:12px;padding:0 4px" id="cr_lu_${id}">—</div>
-    <div class="money text-blue" style="font-size:12px;padding:0 4px" id="cr_pv_${id}">—</div>
-    <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCalcProd('${id}')">×</button>
+    <div style="display:grid;grid-template-columns:2fr 80px 90px 110px 110px 32px;gap:6px;align-items:center">
+      <input class="input" style="font-size:12px" list="calc-catalog" value="${esc(p.desc||'')}" placeholder="Producto (escribí o elegí del catálogo)" oninput="updateCalcProd('${id}','desc',this.value)" onchange="applyCatalogToCalcProd('${id}',this.value)"/>
+      <input class="input mono" style="font-size:12px" type="number" min="0" value="${p.qty||''}" placeholder="0" oninput="updateCalcProd('${id}','qty',this.value)"/>
+      <input class="input mono" style="font-size:12px" type="number" min="0" step="0.01" value="${p.fob||''}" placeholder="0.00" oninput="updateCalcProd('${id}','fob',this.value)"/>
+      <div class="money text-red" style="font-size:12px;padding:0 4px;line-height:1.25" id="cr_lu_${id}">—</div>
+      <div class="money text-blue" style="font-size:12px;padding:0 4px" id="cr_pv_${id}">—</div>
+      <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0;display:flex;align-items:center;justify-content:center" onclick="removeCalcProd('${id}')" title="Quitar">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:110px 70px 80px 80px 80px 1fr;gap:6px;align-items:center;margin-top:5px">
+      <input class="input mono" style="font-size:11px;padding:4px 6px" value="${esc(p.ncm||'')}" placeholder="NCM" title="Posición arancelaria" oninput="updateCalcProd('${id}','ncm',this.value)"/>
+      <input class="input mono" style="font-size:11px;padding:4px 6px" type="number" min="0" step="0.1" value="${p.di_pct ?? ''}" placeholder="DI ${cfg.di_pct}%" title="Derecho de importación %" oninput="updateCalcProd('${id}','di_pct',this.value)"/>
+      <select class="select" style="font-size:11px;padding:4px 6px" title="IVA %" onchange="updateCalcProd('${id}','iva_pct',this.value)">
+        ${[['', 'IVA ' + cfg.iva_pct + '%'], ['21', 'IVA 21%'], ['10.5', 'IVA 10,5%'], ['0', 'IVA 0%']].map(([val, l]) => `<option value="${val}" ${String(p.iva_pct ?? '') === val ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <input class="input mono" style="font-size:11px;padding:4px 6px" type="number" min="0" step="0.001" value="${p.cbm||''}" placeholder="m³/un." title="Volumen por unidad (m³)" oninput="updateCalcProd('${id}','cbm',this.value)"/>
+      <input class="input mono" style="font-size:11px;padding:4px 6px" type="number" min="0" step="0.01" value="${p.kg||''}" placeholder="kg/un." title="Peso por unidad (kg)" oninput="updateCalcProd('${id}','kg',this.value)"/>
+      <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
+        <span id="cr_info_${id}" style="font-size:10px;color:var(--text3)"></span>
+        <button class="btn btn-ghost btn-xs" onclick="saveCalcProdToCatalog('${id}')" title="Guardar en el catálogo de productos">💾</button>
+      </div>
+    </div>
   `
   const container = document.getElementById('calc-prod-rows')
   if (container) container.appendChild(row)
   recalcAll()
 }
 
+const CALC_NUM_FIELDS = ['qty', 'fob', 'cbm', 'kg']
+const CALC_PCT_FIELDS = ['di_pct', 'iva_pct']   // vacío = usa la tasa general
 function updateCalcProd(id, field, val) {
   const p = calcProds.find(x => x.id === id)
   if (p) {
-    p[field] = field === 'desc' ? val : (parseFloat(val) || 0)
+    if (CALC_NUM_FIELDS.includes(field)) p[field] = parseFloat(val) || 0
+    else if (CALC_PCT_FIELDS.includes(field)) { const n = parseFloat(val); if (Number.isFinite(n)) p[field] = n; else delete p[field] }
+    else p[field] = val
     DB.set('calc_prods_draft', calcProds)
   }
   recalcAll()
+}
+
+// Al elegir un producto del catálogo, completa sus datos en la fila.
+function applyCatalogToCalcProd(id, name) {
+  const prod = getProducts().find(x => x.nombre === name)
+  const p = calcProds.find(x => x.id === id)
+  if (!prod || !p) return
+  Object.assign(p, { desc: prod.nombre, productId: prod.id, ncm: prod.ncm || '', cbm: Number(prod.cbm) || 0, kg: Number(prod.kg) || 0 })
+  if (!p.fob && prod.fob_ref) p.fob = Number(prod.fob_ref) || 0
+  ;['di_pct', 'iva_pct'].forEach(k => { const n = parseFloat(prod[k]); if (Number.isFinite(n)) p[k] = n; else delete p[k] })
+  DB.set('calc_prods_draft', calcProds)
+  initCalcPage()
+  toast('Datos de "' + prod.nombre + '" cargados')
+}
+
+function saveCalcProdToCatalog(id) {
+  const p = calcProds.find(x => x.id === id)
+  if (!p || !p.desc) { toast('Poné un nombre de producto primero'); return }
+  const products = getProducts()
+  const existing = products.find(x => x.id === p.productId) || products.find(x => x.nombre.toLowerCase() === p.desc.trim().toLowerCase())
+  const data = { nombre: p.desc.trim(), ncm: p.ncm || '', di_pct: p.di_pct ?? '', iva_pct: p.iva_pct ?? '', cbm: p.cbm || '', kg: p.kg || '', fob_ref: p.fob || '' }
+  if (existing) Object.assign(existing, data)
+  else products.push({ id: uid(), ...data })
+  saveProducts(products)
+  p.productId = existing?.id || products[products.length - 1].id
+  DB.set('calc_prods_draft', calcProds)
+  renderCalcCatalogList()
+  toast(existing ? 'Producto actualizado en el catálogo ✓' : 'Producto agregado al catálogo ✓')
+}
+
+function renderCalcCatalogList() {
+  const dl = document.getElementById('calc-catalog')
+  if (dl) dl.innerHTML = getProducts().map(x => `<option value="${esc(x.nombre)}">${esc(x.ncm || '')}</option>`).join('')
 }
 
 function removeCalcProd(id) {
@@ -3687,13 +3817,15 @@ function recalcAll() {
 
   const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi, descuento, bienUso)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi, descuento, bienUso)
+  const totals = results.totals
 
   // Update per-product rows
   results.forEach(r => {
     const lu = document.getElementById('cr_lu_' + r.id)
     const pv = document.getElementById('cr_pv_' + r.id)
-    if (lu) lu.textContent = fmtUSD(r.landedUnit)
+    if (lu) lu.innerHTML = fmtUSD(r.landedUnit) + `<div style="font-size:10px;color:var(--green-t);font-weight:600" title="Sin créditos fiscales recuperables">real ${fmtUSD(r.realUnit)}</div>`
+    const info = document.getElementById('cr_info_' + r.id)
+    if (info) info.textContent = `DI ${r.di_aplicado}% · IVA ${r.iva_aplicado}% · flete ${fmtUSD(r.flete_asignado)}`
     if (pv) pv.textContent = fmtUSD(r.precioVenta)
   })
 
@@ -3716,9 +3848,9 @@ function recalcAll() {
   const rows = [
     { label: 'FOB mercadería', val: fobTotal, color: 'var(--blue)' },
     ...(descuento > 0 ? [{ label: 'Descuento sobre FOB', val: -descuento, color: 'var(--green)' }] : []),
-    { label: `DI (${cfg.di_pct}%)`, val: totals.di, color: '#DC2626' },
+    { label: totals.mixedRates ? 'DI (según cada NCM)' : `DI (${results[0]?.di_aplicado ?? cfg.di_pct}%)`, val: totals.di, color: '#DC2626' },
     { label: `TE (${cfg.te_pct}%)`, val: totals.te, color: '#B91C1C' },
-    { label: `IVA import. (${cfg.iva_pct}%)`, val: totals.iva, color: '#EF4444' },
+    { label: totals.mixedRates ? 'IVA import. (según cada NCM)' : `IVA import. (${results[0]?.iva_aplicado ?? cfg.iva_pct}%)`, val: totals.iva, color: '#EF4444' },
     { label: `IVA Adicional (${cfg.iva_adicional_pct}%)`, val: totals.iva_ad, color: '#F87171' },
     { label: `Ganancias (${cfg.ganancias_pct}%)`, val: totals.ganancias, color: '#FCA5A5' },
     { label: `IIBB (${cfg.iibb_pct}%)`, val: totals.iibb, color: '#FECACA' },
@@ -3731,7 +3863,13 @@ function recalcAll() {
         <span style="width:8px;height:8px;border-radius:2px;background:${r.color};display:inline-block;flex-shrink:0"></span>${r.label}
       </span>
       <span class="money" style="${r.val<0?'color:var(--green-t)':''}">${r.val<0?'-':''}${fmtUSD(Math.abs(r.val))}</span>
-    </div>`).join('')
+    </div>`).join('') + `
+    <div style="margin-top:10px;padding:10px;border-radius:var(--r);background:var(--surface2);font-size:12px;line-height:1.7">
+      <div style="display:flex;justify-content:space-between"><span><b>Plata que necesitás</b> (todo lo que se paga)</span><span class="money">${fmtUSD(totals.landed)}</span></div>
+      <div style="display:flex;justify-content:space-between;color:var(--green-t)"><span>− Créditos fiscales que recuperás <span title="IVA, IVA adicional, percepciones de Ganancias e IIBB e IVA del fee. Se recuperan si sos responsable inscripto." style="cursor:help">ⓘ</span></span><span class="money">−${fmtUSD(totals.creditos)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span>Costo real de la mercadería</span><span class="money text-green">${fmtUSD(totals.costoReal)}</span></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Flete repartido por ${totals.fleteReparto === 'volumen' ? 'volumen (m³)' : 'valor FOB (cargá m³ en todos los productos para repartir por volumen)'}.</div>
+    </div>`
 
   const barItems = [
     { val: totals.fobNeto, color: 'var(--blue)' },
@@ -3755,6 +3893,7 @@ function recalcAll() {
 
 // Initialize calc products after render — called from renderPage
 function initCalcPage() {
+  renderCalcCatalogList()
   calcProds = DB.get('calc_prods_draft') || []
   calcProdCount = 0
   const container = document.getElementById('calc-prod-rows')
@@ -3809,7 +3948,7 @@ function saveAsQuote(estado) {
   const validProds = calcProds.filter(p => p.qty > 0 && p.fob > 0)
   const results = calcProductLanded(validProds, flete, cfg, modulo, paraMi, descuento, bienUso)
   const fobTotal = validProds.reduce((s, p) => s + p.qty * p.fob, 0)
-  const totals = computeLanded(fobTotal, flete, cfg, modulo, paraMi, descuento, bienUso)
+  const totals = results.totals
   const totalVenta = results.reduce((s, r) => s + r.precioVenta * (r.qty || 0), 0)
 
   const quotes = getQuotes()
@@ -3824,11 +3963,12 @@ function saveAsQuote(estado) {
     notas: document.getElementById('sq-notas').value,
     moneda: 'USD',
     total: totalVenta,
-    fobTotal, flete, modulo, descuento, bienUso,
+    fobTotal, flete, modulo, descuento, bienUso, _paraMi: paraMi,
     landedTotal: totals.landed,
     multiplo: fobTotal ? totals.landed / fobTotal : 0,
     items: results.map(r => ({
       desc: r.desc, qty: r.qty, fob: r.fob,
+      ncm: r.ncm || '', di_pct: r.di_aplicado, iva_pct: r.iva_aplicado, cbm: r.cbm || 0, kg: r.kg || 0, productId: r.productId || null, realUnit: r.realUnit,
       markup: r.markup, landedUnit: r.landedUnit,
       precioVenta: r.precioVenta,
       total: r.precioVenta * (r.qty || 0)
@@ -3839,6 +3979,7 @@ function saveAsQuote(estado) {
       total_trib: totals.total_trib, total_locales: totals.total_locales,
       total_fee: totals.total_fee, iva_fee: totals.iva_fee,
       descuento, fobNeto: totals.fobNeto, bienUso,
+      creditos: totals.creditos, costoReal: totals.costoReal, seguro: totals.seguro, porProducto: true,
     },
     pagos: [],
     createdAt: new Date().toISOString().slice(0, 10),
@@ -4407,10 +4548,10 @@ function openEditQuote(id){
 
     <!-- MODO TOGGLE -->
     <div style="display:flex;gap:0;background:var(--surface2);border-radius:var(--r);padding:3px;margin-bottom:14px;width:fit-content">
-      <button id="eq-btn-cliente" class="${!q._paraMi?'btn btn-primary':'btn btn-ghost'} btn-sm" style="border-radius:5px" onclick="eqSetMode('cliente')">Para cliente</button>
-      <button id="eq-btn-mi" class="${q._paraMi?'btn btn-primary':'btn btn-ghost'} btn-sm" style="border-radius:5px" onclick="eqSetMode('mi')">Para mí (sin fee)</button>
+      <button id="eq-btn-cliente" class="${!quoteParaMi(q)?'btn btn-primary':'btn btn-ghost'} btn-sm" style="border-radius:5px" onclick="eqSetMode('cliente')">Para cliente</button>
+      <button id="eq-btn-mi" class="${quoteParaMi(q)?'btn btn-primary':'btn btn-ghost'} btn-sm" style="border-radius:5px" onclick="eqSetMode('mi')">Para mí (sin fee)</button>
     </div>
-    <input type="hidden" id="eq-modo" value="${q._paraMi?'mi':'cliente'}"/>
+    <input type="hidden" id="eq-modo" value="${quoteParaMi(q)?'mi':'cliente'}"/>
 
     <!-- DATOS -->
     <div class="form-row mb10">
@@ -4456,7 +4597,7 @@ function openEditQuote(id){
         <label class="label">Flete internacional (USD)</label>
         <input class="input mono" type="number" id="eq-flete" value="${q.flete||0}" min="0" step="1"/>
       </div>
-      <div class="form-group" id="eq-modulo-group" style="${q._paraMi?'display:none':''}">
+      <div class="form-group" id="eq-modulo-group" style="${quoteParaMi(q)?'display:none':''}">
         <label class="label">Módulo de fee</label>
         <select class="select" id="eq-modulo-sel">
           <option value="A" ${q.modulo!=='B'?'selected':''}>Módulo A ($${cfg.fee_fijo_a} + ${cfg.fee_pct_a}%)</option>
@@ -4576,13 +4717,21 @@ function saveEditQuote(id){
 
   // Recalculate costoDetalle with updated percentages
   const overrideCfg={...cfg,di_pct,te_pct,iva_pct,iva_adicional_pct:iva_ad_pct,ganancias_pct:gan_pct,iibb_pct}
-  const t=computeLanded(fobTotal,flete,overrideCfg,modulo,paraMi)
+
+  // Si el presupuesto se armó por producto (NCM), cada ítem conserva su derecho, IVA y volumen.
+  const orig=quotes[idx].items||[]
+  const merged=items.map((it,i)=>{
+    const o=orig[i]&&orig[i].desc===it.desc?orig[i]:orig.find(x=>x.desc===it.desc)
+    return o?{...it,ncm:o.ncm,di_pct:o.di_pct,iva_pct:o.iva_pct,cbm:o.cbm,kg:o.kg,productId:o.productId}:it
+  })
+  const porProducto=merged.some(it=>it.di_pct!==undefined||it.iva_pct!==undefined||Number(it.cbm)>0)
+  const r=computeLandedProducts(merged,flete,overrideCfg,modulo,paraMi,0,!!quotes[idx].bienUso)
+  const t=r.totals
 
   // Distribute landedUnit per product
-  const itemsWithLanded=items.map(it=>{
-    const pFob=(it.qty||0)*(it.fob||0)
-    const landedUnit=fobTotal?(pFob/fobTotal*t.landed/(it.qty||1)):0
-    return{...it,landedUnit}
+  const itemsWithLanded=r.items.map(it=>{
+    const {pFob,flete_asignado,di_aplicado,iva_aplicado,landedTotal,precioVenta,multiplo,...rest}=it
+    return porProducto?{...rest,di_pct:di_aplicado,iva_pct:iva_aplicado}:{desc:it.desc,qty:it.qty,fob:it.fob,total:it.total,landedUnit:it.landedUnit}
   })
 
   quotes[idx]={...quotes[idx],
@@ -4594,7 +4743,7 @@ function saveEditQuote(id){
     notas:document.getElementById('eq-notas').value,
     items:itemsWithLanded,fobTotal,flete,landedTotal:t.landed,total,modulo,_paraMi:paraMi,
     multiplo:fobTotal?t.landed/fobTotal:0,
-    costoDetalle:{di:t.di,te:t.te,iva:t.iva,iva_ad:t.iva_ad,ganancias:t.ganancias,iibb:t.iibb,total_trib:t.total_trib,total_locales:t.total_locales,total_fee:t.total_fee,iva_fee:t.iva_fee}
+    costoDetalle:{di:t.di,te:t.te,iva:t.iva,iva_ad:t.iva_ad,ganancias:t.ganancias,iibb:t.iibb,total_trib:t.total_trib,total_locales:t.total_locales,total_fee:t.total_fee,iva_fee:t.iva_fee,seguro:t.seguro,creditos:t.creditos,costoReal:t.costoReal,porProducto}
   }
   saveQuotes(quotes)
 
@@ -4664,10 +4813,11 @@ function convertQuoteToOrder(quoteId){
     code:'ORD-'+new Date().getFullYear()+'-'+String(orders.filter(o=>o.companyId===currentCompanyId).length+1).padStart(3,'0'),
     estado:'pedido',proveedor:'',categoria:'',
     fob_total:q.fobTotal||q.total||0,
-    productos:(q.items||[]).map(it=>({desc:it.desc,qty:it.qty,price:it.fob||0})),
+    productos:(q.items||[]).map(it=>({desc:it.desc,qty:it.qty,price:it.fob||0,ncm:it.ncm||'',di_pct:it.di_pct,iva_pct:it.iva_pct,cbm:it.cbm||0,kg:it.kg||0})),
     pagos:[],contenedores:[],costos:[],archivos:[],
     notas:`Generado desde presupuesto ${q.code} — Cliente: ${cl?.nombre||'—'}`,
     quoteId,_flete:q.flete||0,_landedTotal:q.landedTotal||0,_costoDetalle:q.costoDetalle||null,
+    _estimado:{ landed:q.landedTotal||0, flete:q.flete||0, fob:q.fobTotal||q.total||0, costoDetalle:q.costoDetalle||null, fecha:new Date().toISOString().slice(0,10), origen:q.code },
     createdAt:new Date().toISOString().slice(0,10),
   }
   orders.push(newOrder);saveOrders(orders)
@@ -4702,6 +4852,367 @@ function openQuotePagoModal(quoteId){openQuotePagoModal2(quoteId)}
 function changeQuoteStatus(id,estado){changeQStatus(id,estado)}
 
 /* ════════════════════════════════════
+   FASE 2 — Utilidades comunes
+════════════════════════════════════ */
+function todayISO() { return new Date().toISOString().slice(0, 10) }
+function addDaysISO(d, n) { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10) }
+function daysBetween(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) }
+function quoteOf(o) { return o.quoteId ? getQuotes().find(q => q.id === o.quoteId) : null }
+// "Para mí" (sin fee): guardado desde esta versión; en presupuestos viejos se deduce de que no tengan fee.
+function quoteParaMi(q) {
+  if (typeof q._paraMi === 'boolean') return q._paraMi
+  const cd = q.costoDetalle || {}
+  return cd.total_fee !== undefined && (Number(cd.total_fee) || 0) === 0 && (Number(cd.iva_fee) || 0) === 0
+}
+
+// Guarda el costo estimado de la orden antes de que se pise con los valores reales.
+function snapshotEstimate(o) {
+  if (o._estimado || o._valoresReales) return
+  const q = quoteOf(o)
+  const landed = Number(q?.landedTotal ?? o._landedTotal) || 0
+  if (!landed) return
+  o._estimado = { landed, flete: Number(q?.flete ?? o._flete) || 0, fob: Number(o.fob_total) || 0,
+    costoDetalle: q?.costoDetalle || o._costoDetalle || null, fecha: todayISO(), origen: q?.code || 'orden' }
+}
+
+// Registra fechas clave cuando cambia una orden: ETA y fin de producción originales, y fecha de entrega.
+function trackOrderChange(o, prevEstado) {
+  if (o.eta && !o._eta_original) o._eta_original = o.eta
+  if (o.fin_prod && !o._fin_prod_original) o._fin_prod_original = o.fin_prod
+  if (o.estado === 'entregado' && prevEstado !== 'entregado' && !o.fecha_entrega) o.fecha_entrega = todayISO()
+  snapshotEstimate(o)
+}
+
+// Una vez por carga: guarda estimados y ETA originales de las órdenes activas que todavía no los tienen.
+function backfillTracking() {
+  const orders = getOrders()
+  let changed = false
+  orders.forEach(o => {
+    if (o.estado === 'entregado') return
+    const before = JSON.stringify(o)
+    trackOrderChange(o, o.estado)
+    if (JSON.stringify(o) !== before) changed = true
+  })
+  if (changed) saveOrders(orders)
+}
+
+/* ════════════════════════════════════
+   CATÁLOGO DE PRODUCTOS (NCM, derecho, IVA, volumen)
+════════════════════════════════════ */
+function renderProducts() {
+  const products = getProducts().slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+  const cfg = getCalcConfig()
+  if (!products.length) return `<div class="card" style="text-align:center;padding:40px;color:var(--text3)">
+    <div style="font-size:34px;margin-bottom:10px">🏷️</div>
+    <div style="font-weight:600;color:var(--text2)">Todavía no hay productos en el catálogo.</div>
+    <div style="font-size:12px;margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto">Cargá cada producto con su posición arancelaria (NCM), derecho de importación, IVA y volumen por unidad. La calculadora los usa para calcular el costo producto por producto. También podés guardarlos desde la calculadora con el botón 💾.</div>
+    <button class="btn btn-primary btn-sm" style="margin-top:14px" onclick="openProductModal()">+ Agregar producto</button>
+  </div>`
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Producto</th><th>NCM</th><th>Derecho</th><th>IVA</th><th>m³/un.</th><th>kg/un.</th><th>FOB ref.</th><th></th></tr></thead>
+    <tbody>${products.map(p => `<tr>
+      <td style="font-weight:600">${esc(p.nombre)}${p.notas ? `<div style="font-size:11px;color:var(--text3);font-weight:400">${esc(p.notas)}</div>` : ''}</td>
+      <td class="mono td-sm">${esc(p.ncm || '—')}</td>
+      <td class="mono td-sm">${p.di_pct !== '' && p.di_pct != null ? esc(p.di_pct) + '%' : `<span class="text-muted">${cfg.di_pct}% (general)</span>`}</td>
+      <td class="mono td-sm">${p.iva_pct !== '' && p.iva_pct != null ? esc(p.iva_pct) + '%' : `<span class="text-muted">${cfg.iva_pct}% (general)</span>`}</td>
+      <td class="mono td-sm">${esc(p.cbm || '—')}</td>
+      <td class="mono td-sm">${esc(p.kg || '—')}</td>
+      <td class="money td-sm">${p.fob_ref ? fmtUSD(p.fob_ref) : '—'}</td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-xs" onclick="openProductModal('${esc(p.id)}')" title="Editar">✏️</button>
+        <button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteProduct('${esc(p.id)}')" title="Borrar">🗑</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div>
+  <p style="font-size:11px;color:var(--text3);margin-top:8px">Derecho o IVA vacío = se usa la tasa general de la calculadora. Con IVA 10,5% la percepción de IVA adicional se calcula a la mitad.</p>`
+}
+
+function openProductModal(id) {
+  const p = id ? getProducts().find(x => x.id === id) : {}
+  if (id && !p) return
+  let el = document.getElementById('modal-product')
+  if (!el) { el = document.createElement('div'); el.id = 'modal-product'; el.className = 'modal-overlay'; el.onclick = e => { if (e.target === el) el.classList.remove('open') }; document.body.appendChild(el) }
+  const f = (k, label, attrs = '') => `<div class="form-group"><label class="label">${label}</label><input class="input" id="pr-${k}" value="${esc(p[k] ?? '')}" ${attrs}/></div>`
+  el.innerHTML = `<div class="modal modal-sm">
+    <div class="modal-header"><span class="modal-title">${id ? 'Editar producto' : 'Nuevo producto'}</span><button class="modal-close" onclick="document.getElementById('modal-product').classList.remove('open')">✕</button></div>
+    <div class="form-group mb12"><label class="label">Nombre <span class="req">*</span></label><input class="input" id="pr-nombre" value="${esc(p.nombre || '')}" placeholder="ej: Remera algodón 180g"/></div>
+    <div class="form-row mb12">${f('ncm', 'NCM (posición arancelaria)', 'placeholder="ej: 6109.10.00" style="font-family:var(--mono)"')}${f('fob_ref', 'FOB de referencia (USD/un.)', 'type="number" min="0" step="0.01"')}</div>
+    <div class="form-row mb12">${f('di_pct', 'Derecho de importación %', 'type="number" min="0" step="0.1" placeholder="vacío = general"')}
+      <div class="form-group"><label class="label">IVA</label><select class="select" id="pr-iva_pct">
+        ${[['', 'General'], ['21', '21%'], ['10.5', '10,5%'], ['0', '0%']].map(([v, l]) => `<option value="${v}" ${String(p.iva_pct ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select></div></div>
+    <div class="form-row mb12">${f('cbm', 'Volumen por unidad (m³)', 'type="number" min="0" step="0.001"')}${f('kg', 'Peso por unidad (kg)', 'type="number" min="0" step="0.01"')}</div>
+    <div class="form-group mb16"><label class="label">Notas</label><input class="input" id="pr-notas" value="${esc(p.notas || '')}" placeholder="Proveedor habitual, embalaje, etc."/></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-product').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveProduct('${esc(id || '')}')">Guardar</button>
+    </div>
+  </div>`
+  el.classList.add('open')
+}
+
+function saveProduct(id) {
+  const val = k => document.getElementById('pr-' + k).value.trim()
+  const nombre = val('nombre')
+  if (!nombre) return toast('Poné un nombre')
+  const products = getProducts()
+  if (products.some(x => x.id !== id && x.nombre.toLowerCase() === nombre.toLowerCase())) return toast('Ya hay un producto con ese nombre')
+  const data = { nombre, ncm: val('ncm'), di_pct: val('di_pct'), iva_pct: val('iva_pct'), cbm: val('cbm'), kg: val('kg'), fob_ref: val('fob_ref'), notas: val('notas') }
+  if (id) Object.assign(products.find(x => x.id === id), data)
+  else products.push({ id: uid(), ...data })
+  saveProducts(products)
+  document.getElementById('modal-product').classList.remove('open')
+  toast(id ? 'Producto actualizado ✓' : 'Producto agregado ✓')
+  renderPage()
+}
+
+function deleteProduct(id) {
+  const p = getProducts().find(x => x.id === id)
+  if (!p || !confirm(`¿Borrar "${p.nombre}" del catálogo?`)) return
+  saveProducts(getProducts().filter(x => x.id !== id))
+  toast('Producto borrado'); renderPage()
+}
+
+/* ════════════════════════════════════
+   DOCUMENTOS POR ETAPA
+   Un documento cuenta como recibido si hay un archivo adjunto en su categoría
+   o si alguien lo marcó a mano ("lo tengo" / "no aplica").
+════════════════════════════════════ */
+const DOC_REQS = [
+  { key: 'proforma',    label: 'Proforma del proveedor', from: 'pedido',    cats: ['Proforma'] },
+  { key: 'factura',     label: 'Factura comercial',      from: 'transito',  cats: ['Factura 1', 'Factura 2'] },
+  { key: 'packing',     label: 'Packing list',           from: 'transito',  cats: ['Packing List'] },
+  { key: 'bl',          label: 'Bill of Lading (BL)',    from: 'transito',  cats: ['BL'] },
+  { key: 'origen',      label: 'Certificado de origen',  from: 'aduana',    cats: ['Certificado de origen'], optional: true },
+  { key: 'vep',         label: 'VEP (pago de tributos)', from: 'aduana',    cats: ['VEP'] },
+  { key: 'despachante', label: 'Factura del despachante', from: 'entregado', cats: ['FC Despachante'] },
+  { key: 'flete',       label: 'Factura del flete',      from: 'entregado', cats: ['FC Flete'] },
+  { key: 'deposito',    label: 'Factura del depósito fiscal', from: 'entregado', cats: ['FC Depósito Fiscal'], optional: true },
+]
+
+function docsStatus(o) {
+  const idx = S_ORDER.indexOf(o.estado)
+  return DOC_REQS.map(d => {
+    const viaFile = (o.archivos || []).some(f => d.cats.includes(f.categoria))
+    const manual = o.docsCheck?.[d.key] || null
+    return { ...d, needed: idx >= S_ORDER.indexOf(d.from), done: viaFile || !!manual, viaFile, manual }
+  })
+}
+// Documentos obligatorios que ya deberían estar y faltan (solo órdenes activas).
+function docsMissing(o) {
+  if (o.estado === 'entregado') return []
+  return docsStatus(o).filter(d => d.needed && !d.done && !d.optional)
+}
+
+function detDocumentos(o) {
+  const st = docsStatus(o)
+  const missing = st.filter(d => d.needed && !d.done && !d.optional).length
+  const row = d => {
+    const icon = d.done ? '✅' : d.needed ? (d.optional ? '➖' : '⚠️') : '⬜'
+    const note = d.viaFile ? '<span class="text-green" style="font-size:11px">archivo adjunto</span>'
+      : d.manual ? `<span style="font-size:11px;color:var(--text2)">${d.manual === 'na' ? 'no aplica' : 'marcado como recibido'}</span>`
+      : d.needed ? `<span style="font-size:11px;color:${d.optional ? 'var(--text3)' : 'var(--amber-t)'}">${d.optional ? 'opcional' : 'falta'}</span>`
+      : `<span style="font-size:11px;color:var(--text3)">se pide desde ${S_LABELS[d.from]}</span>`
+    const actions = d.viaFile ? '' : d.manual
+      ? `<button class="btn btn-ghost btn-xs" onclick="setDocCheck('${o.id}','${d.key}',null)">Deshacer</button>`
+      : `<button class="btn btn-ghost btn-xs" onclick="renderDetailTabs(getOrders().find(x=>x.id==='${o.id}'),'archivos')">Adjuntar</button>
+         <button class="btn btn-ghost btn-xs" onclick="setDocCheck('${o.id}','${d.key}','ok')">Lo tengo</button>
+         <button class="btn btn-ghost btn-xs" onclick="setDocCheck('${o.id}','${d.key}','na')">No aplica</button>`
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border)">
+      <span style="font-size:15px">${icon}</span>
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${d.label}</div>${note}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${actions}</div>
+    </div>`
+  }
+  return `<div style="font-size:12px;margin-bottom:10px;color:${missing ? 'var(--amber-t)' : 'var(--green-t)'};font-weight:600">
+      ${missing ? `Faltan ${missing} documento${missing > 1 ? 's' : ''} para la etapa actual (${S_LABELS[o.estado]}).` : 'Todos los documentos de la etapa actual están al día.'}
+    </div>
+    <div style="border:1px solid var(--border);border-radius:var(--r);overflow:hidden">${st.map(row).join('')}</div>
+    <p style="font-size:11px;color:var(--text3);margin-top:8px">Al adjuntar un archivo en la categoría que corresponde (pestaña Archivos), el documento se marca solo.</p>`
+}
+
+function setDocCheck(orderId, key, value) {
+  const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
+  o.docsCheck = o.docsCheck || {}
+  if (value) o.docsCheck[key] = value; else delete o.docsCheck[key]
+  saveOrders(orders)
+  renderDetailTabs(o, 'documentos')
+}
+
+/* ════════════════════════════════════
+   FLUJO DE CAJA PROYECTADO
+   Por cada orden activa: saldo al proveedor, flete y nacionalización (tributos + gastos),
+   ubicados en el tiempo según sus fechas, menos lo que ya está pagado o cargado como costo.
+════════════════════════════════════ */
+const CF_TYPES = {
+  proveedor: { label: 'Saldo a proveedor', color: 'var(--blue)' },
+  flete:     { label: 'Flete',             color: 'var(--teal-t)' },
+  aduana:    { label: 'Tributos de aduana', color: 'var(--red)' },
+  locales:   { label: 'Gastos locales',    color: 'var(--amber)' },
+}
+
+function cashflowItems() {
+  const items = []
+  const cfg = getCalcConfig()
+  ordersByCompany().filter(o => ['pedido', 'produccion', 'transito', 'aduana'].includes(o.estado)).forEach(o => {
+    const fob = Number(o.fob_total) || 0
+    const q = quoteOf(o)
+    const cd = (!o._valoresReales && (q?.costoDetalle || o._costoDetalle)) || o._estimado?.costoDetalle || null
+    const fleteEst = Number(q?.flete ?? o._flete) || 0
+    let trib, loc, basado
+    if (cd && (cd.total_trib || cd.total_locales)) {
+      trib = Number(cd.total_trib) || 0
+      loc = (Number(cd.total_locales) || 0) + (Number(cd.total_fee) || 0) + (Number(cd.iva_fee) || 0)
+      basado = 'presupuesto'
+    } else {
+      const t = computeLanded(fob, fleteEst, cfg, 'A', true)
+      trib = t.total_trib; loc = t.total_locales; basado = 'tasas generales'
+    }
+    const saldo = Math.max(0, fob - totalPagos(o))
+    const fletePend = Math.max(0, fleteEst - totalCostosCat(o, 'naviera'))
+    const tribPend = Math.max(0, trib - totalCostosCat(o, 'impuesto'))
+    const locPend = Math.max(0, loc - totalCostosCat(o, 'otros'))
+    const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : null)
+    const base = { orderId: o.id, code: o.code, proveedor: o.proveedor || '', basado }
+    if (saldo > 0) items.push({ ...base, tipo: 'proveedor', monto: saldo, fecha: o.fin_prod || o.etd || (o.eta ? addDaysISO(o.eta, -30) : null) })
+    if (fletePend > 0) items.push({ ...base, tipo: 'flete', monto: fletePend, fecha: etaish })
+    if (tribPend > 0) items.push({ ...base, tipo: 'aduana', monto: tribPend, fecha: etaish ? addDaysISO(etaish, 3) : null })
+    if (locPend > 0) items.push({ ...base, tipo: 'locales', monto: locPend, fecha: etaish ? addDaysISO(etaish, 7) : null })
+  })
+  return items
+}
+
+function weekStartISO(d) { const x = new Date(d + 'T12:00:00'); const dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow); return x.toISOString().slice(0, 10) }
+
+function renderCashflow() {
+  const items = cashflowItems()
+  if (!items.length) return `<div class="card" style="text-align:center;padding:40px;color:var(--text3)">
+    <div style="font-size:34px;margin-bottom:10px">📈</div>
+    <div style="font-weight:600;color:var(--text2)">No hay pagos pendientes en las órdenes activas.</div>
+    <div style="font-size:12px;margin-top:4px">El flujo de caja toma las órdenes en Pedido, Producción, Tránsito y Aduana.</div></div>`
+  const WEEKS = 16
+  const thisWeek = weekStartISO(todayISO())
+  const buckets = new Map()
+  for (let i = 0; i < WEEKS; i++) buckets.set(addDaysISO(thisWeek, i * 7), [])
+  const vencido = [], sinFecha = [], despues = []
+  items.forEach(it => {
+    if (!it.fecha) return sinFecha.push(it)
+    const w = weekStartISO(it.fecha)
+    if (w < thisWeek) vencido.push(it)
+    else if (buckets.has(w)) buckets.get(w).push(it)
+    else despues.push(it)
+  })
+  const total = arr => arr.reduce((s, x) => s + x.monto, 0)
+  const in30 = items.filter(it => it.fecha && it.fecha <= addDaysISO(todayISO(), 30) && weekStartISO(it.fecha) >= thisWeek)
+  const in90 = items.filter(it => it.fecha && it.fecha <= addDaysISO(todayISO(), 90) && weekStartISO(it.fecha) >= thisWeek)
+  const groups = [
+    ...(vencido.length ? [{ label: '⚠️ Atrasado (fecha ya pasada)', items: vencido, warn: true }] : []),
+    ...[...buckets.entries()].map(([w, arr]) => ({ label: 'Semana del ' + fmtDate(w), items: arr })),
+    ...(despues.length ? [{ label: 'Más adelante', items: despues }] : []),
+    ...(sinFecha.length ? [{ label: 'Sin fecha (cargá fin de producción o ETA)', items: sinFecha, warn: true }] : []),
+  ]
+  const max = Math.max(1, ...groups.map(g => total(g.items)))
+  const kpi = (label, val, color, sub) => `<div class="card"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">${label}</div><div style="font-size:21px;font-weight:800;${color ? 'color:' + color : ''}">${fmtUSD(val)}</div>${sub ? `<div style="font-size:11px;color:var(--text3)">${sub}</div>` : ''}</div>`
+  const usaGenerales = items.some(i => i.basado === 'tasas generales')
+  return `
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px">
+    ${kpi('Próximos 30 días', total(in30), 'var(--amber-t)')}
+    ${kpi('Próximos 90 días', total(in90))}
+    ${kpi('Atrasado', total(vencido), vencido.length ? 'var(--red-t)' : '', vencido.length ? vencido.length + ' pagos' : 'nada atrasado')}
+    ${kpi('Total comprometido', total(items), '', items.length + ' pagos en ' + new Set(items.map(i => i.orderId)).size + ' órdenes')}
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">${Object.values(CF_TYPES).map(t => `<span style="font-size:11px;display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:${t.color}"></span>${t.label}</span>`).join('')}</div>
+  <div class="card" style="padding:6px 12px">
+    ${groups.map(g => {
+      const t = total(g.items)
+      const byType = Object.keys(CF_TYPES).map(k => [k, total(g.items.filter(i => i.tipo === k))]).filter(([, v]) => v > 0)
+      return `<details style="border-bottom:1px solid var(--border);padding:7px 0" ${g.warn && t ? 'open' : ''}>
+        <summary style="display:grid;grid-template-columns:minmax(150px,210px) 1fr 120px;gap:10px;align-items:center;cursor:${t ? 'pointer' : 'default'};list-style:none">
+          <span style="font-size:12px;font-weight:600;${g.warn ? 'color:var(--amber-t)' : t ? '' : 'color:var(--text3)'}">${g.label}</span>
+          <span style="display:flex;height:12px;border-radius:3px;overflow:hidden;background:var(--surface2)">
+            ${byType.map(([k, v]) => `<span title="${CF_TYPES[k].label}: ${fmtUSD(v)}" style="width:${v / max * 100}%;background:${CF_TYPES[k].color}"></span>`).join('')}
+          </span>
+          <span class="money" style="text-align:right;font-size:13px;${t ? 'font-weight:700' : 'color:var(--text3)'}">${t ? fmtUSD(t) : '—'}</span>
+        </summary>
+        ${g.items.length ? `<div style="padding:6px 0 2px 12px">${g.items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')).map(i => `
+          <div style="display:grid;grid-template-columns:90px 1fr 140px 110px;gap:8px;font-size:12px;padding:3px 0;align-items:center">
+            <span class="mono" style="cursor:pointer;font-weight:600" onclick="openDetail('${i.orderId}')">${esc(i.code)}</span>
+            <span style="color:var(--text2)">${CF_TYPES[i.tipo].label}${i.proveedor ? ' · ' + esc(i.proveedor) : ''}${i.basado === 'tasas generales' && i.tipo !== 'proveedor' ? ' <span title="Sin presupuesto: estimado con las tasas generales" style="cursor:help">*</span>' : ''}</span>
+            <span style="color:var(--text3)">${i.fecha ? fmtDate(i.fecha) : 'sin fecha'}</span>
+            <span class="money" style="text-align:right">${fmtUSD(i.monto)}</span>
+          </div>`).join('')}</div>` : ''}
+      </details>`
+    }).join('')}
+  </div>
+  <p style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5">
+    Fechas: el saldo al proveedor se ubica en el fin de producción (o ETD); flete, tributos y gastos locales alrededor de la ETA.
+    Se descuenta lo ya pagado (pestaña Pagos) y los costos ya cargados (pestaña Costos).
+    Los tributos incluyen IVA y percepciones que después recuperás como crédito fiscal.${usaGenerales ? ' * Órdenes sin presupuesto: estimado con las tasas generales de la calculadora.' : ''}
+  </p>`
+}
+
+/* ════════════════════════════════════
+   ESTIMADO VS. REAL
+════════════════════════════════════ */
+function renderAnalysis() {
+  const orders = ordersByCompany()
+  const done = orders.filter(o => o._valoresReales || o.estado === 'entregado').map(o => {
+    const q = quoteOf(o)
+    const real = o._valoresReales ? Number(q?.landedTotal ?? o._landedTotal) || null : null
+    const est = Number(o._estimado?.landed) || null
+    const fleteReal = o._valoresReales ? Number(q?.flete ?? o._flete) || 0 : null
+    const fleteEst = o._estimado ? Number(o._estimado.flete) || 0 : null
+    const atraso = o._eta_original && o.fecha_entrega ? daysBetween(o._eta_original, o.fecha_entrega) : null
+    return { o, est, real, desvio: est && real ? (real - est) / est * 100 : null, fleteEst, fleteReal, atraso }
+  })
+  const active = orders.filter(o => o.estado !== 'entregado' && o._eta_original && o.eta && o.eta !== o._eta_original)
+    .map(o => ({ o, corrimiento: daysBetween(o._eta_original, o.eta) }))
+  const comparables = done.filter(r => r.desvio !== null || r.atraso !== null)
+  const sinEstimado = done.filter(r => r.est === null).length
+
+  const bySupp = {}
+  comparables.forEach(r => {
+    const k = r.o.proveedor || 'Sin proveedor'
+    const s = bySupp[k] = bySupp[k] || { n: 0, desv: [], atr: [] }
+    s.n++; if (r.desvio !== null) s.desv.push(r.desvio); if (r.atraso !== null) s.atr.push(r.atraso)
+  })
+  const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null
+  const pct = v => v === null ? '—' : `<span style="color:${v > 5 ? 'var(--red-t)' : v < -5 ? 'var(--green-t)' : 'var(--text)'};font-weight:700">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`
+  const dias = v => v === null ? '—' : `<span style="color:${v > 7 ? 'var(--red-t)' : v <= 0 ? 'var(--green-t)' : 'var(--amber-t)'};font-weight:700">${v > 0 ? '+' + Math.round(v) + ' días' : v < 0 ? Math.round(v) + ' días' : 'a tiempo'}</span>`
+
+  return `
+  ${!comparables.length ? `<div class="card mb16" style="font-size:13px;color:var(--text2);line-height:1.55">
+    <b>Todavía no hay órdenes para comparar.</b> Desde esta versión, el CRM guarda el costo estimado de cada orden (del presupuesto)
+    y la ETA original. Cuando una orden se entrega y cargás los valores reales, aparece acá la diferencia, agrupada por proveedor.
+    ${sinEstimado ? `<br><span style="color:var(--text3);font-size:12px">${sinEstimado} orden${sinEstimado > 1 ? 'es' : ''} entregada${sinEstimado > 1 ? 's' : ''} antes de esta versión no tiene${sinEstimado > 1 ? 'n' : ''} el estimado guardado, porque se pisaba al cargar los valores reales.</span>` : ''}
+  </div>` : ''}
+  ${Object.keys(bySupp).length ? `<div class="section-title mb8">Por proveedor</div>
+  <div class="table-wrap mb16"><table>
+    <thead><tr><th>Proveedor</th><th>Órdenes</th><th>Desvío de costo promedio</th><th>Atraso promedio vs. ETA original</th></tr></thead>
+    <tbody>${Object.entries(bySupp).sort((a, b) => b[1].n - a[1].n).map(([k, s]) => `<tr>
+      <td style="font-weight:600">${esc(k)}</td><td class="mono">${s.n}</td><td>${pct(avg(s.desv))}</td><td>${dias(avg(s.atr))}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+  ${comparables.length ? `<div class="section-title mb8">Por orden</div>
+  <div class="table-wrap mb16"><table>
+    <thead><tr><th>Orden</th><th>Proveedor</th><th>Landed estimado</th><th>Landed real</th><th>Desvío</th><th>Flete est. → real</th><th>Entrega vs. ETA</th></tr></thead>
+    <tbody>${comparables.map(r => `<tr>
+      <td class="mono" style="font-weight:600;cursor:pointer" onclick="openDetail('${r.o.id}')">${esc(r.o.code)}</td>
+      <td class="td-sm">${esc(r.o.proveedor || '—')}</td>
+      <td class="money">${r.est ? fmtUSD(r.est) : '—'}</td>
+      <td class="money">${r.real ? fmtUSD(r.real) : '<span class="text-muted">sin cargar</span>'}</td>
+      <td>${pct(r.desvio)}</td>
+      <td class="money td-sm">${r.fleteEst !== null && r.fleteReal !== null ? fmtUSD(r.fleteEst) + ' → ' + fmtUSD(r.fleteReal) : '—'}</td>
+      <td>${dias(r.atraso)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+  ${active.length ? `<div class="section-title mb8">Órdenes activas con la ETA corrida</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Orden</th><th>Proveedor</th><th>Estado</th><th>ETA original</th><th>ETA actual</th><th>Corrimiento</th></tr></thead>
+    <tbody>${active.map(r => `<tr>
+      <td class="mono" style="font-weight:600;cursor:pointer" onclick="openDetail('${r.o.id}')">${esc(r.o.code)}</td>
+      <td class="td-sm">${esc(r.o.proveedor || '—')}</td><td>${badge(r.o.estado)}</td>
+      <td class="td-sm">${fmtDate(r.o._eta_original)}</td><td class="td-sm">${fmtDate(r.o.eta)}</td><td>${dias(r.corrimiento)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}`
+}
+
+/* ════════════════════════════════════
    SISTEMA DE USUARIOS Y PERMISOS
    Login con Firebase Auth. Los permisos de cada persona viven en
    la colección "access" (un documento por email), que las reglas
@@ -4710,6 +5221,7 @@ function changeQuoteStatus(id,estado){changeQStatus(id,estado)}
 const ALL_SECTIONS = [
   ['dashboard','📊 Dashboard'],['calendar','📅 Calendario'],['folders','📁 Carpetas'],
   ['orders','📦 Órdenes'],['tracking','🚢 Tracking'],['costs','💰 Costos'],['calc','🧮 Calculadora'],
+  ['cashflow','📈 Flujo de caja'],['analysis','🎯 Estimado vs. real'],['products','🏷️ Productos'],
   ['clients','👥 Clientes'],['quotes','📋 Presupuestos'],['suppliers','🏭 Proveedores'],['companies','🏢 Empresas']
 ]
 
@@ -5197,6 +5709,7 @@ function _startApp() {
   try { currentCompanyId = localStorage.getItem('icrm_company') } catch {}
   if (!currentCompanyId || !userCanSeeCompany(currentCompanyId)) currentCompanyId = visibleCompanies[0]?.id
 
+  backfillTracking()
   renderCompanySelector()
   applyUserPermissions()
   const firstVisible = ALL_SECTIONS.find(([k])=>userCanSee(k))
