@@ -308,6 +308,7 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
 
     <div class="sidebar-section">Operaciones</div>
     <div class="nav-item active" onclick="nav('dashboard')">📊 Dashboard</div>
+    <div class="nav-item" onclick="nav('dataquality')">🧹 Datos a completar <span id="dq-badge" style="margin-left:auto;font-size:10px;font-weight:700;font-family:var(--mono);background:var(--amber-bg);color:var(--amber-t);border-radius:9px;padding:1px 7px;display:none"></span></div>
     <div class="nav-item" onclick="nav('calendar')">📅 Calendario</div>
     <div class="nav-item" onclick="nav('pagos')">💳 Pagos</div>
     <div class="nav-item" onclick="nav('cashflow')">📈 Flujo de caja</div>
@@ -906,8 +907,15 @@ async function loadData() {
 // con un formulario abierto o mientras alguien escribe.
 let _renderPending = false
 function scheduleRender() { _renderPending = true; tryRender() }
+let _dqSig = ''
 function tryRender() {
-  if (!_renderPending || !currentUser) return
+  if (!currentUser) return
+  // "Datos a completar": si algo se arregló desde una ventana (pagos, valores reales), refrescar al cerrarla.
+  try {
+    const sig = dataQualityIssues().map(r => r.o.id + ':' + r.issues.map(i => i.key).join(',')).join('|')
+    if (sig !== _dqSig) { _dqSig = sig; updateDataQualityBadge(); if (currentPage === 'dataquality') _renderPending = true }
+  } catch {}
+  if (!_renderPending) return
   const ae = document.activeElement
   const typing = ae && ae.closest?.('#content') && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)
   if (document.querySelector('.modal-overlay.open') || typing || currentPage === 'calc') return
@@ -1058,7 +1066,7 @@ document.addEventListener('click', e => {
 /* ════════════════════════════════════
    NAVIGATION
 ════════════════════════════════════ */
-const PAGE_TITLES = { cashflow:'Flujo de caja', analysis:'Estimado vs. real', products:'Catálogo de productos', dashboard:'Dashboard', calendar:'Calendario', pagos:'Pagos pendientes', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
+const PAGE_TITLES = { dataquality:'Datos a completar', cashflow:'Flujo de caja', analysis:'Estimado vs. real', products:'Catálogo de productos', dashboard:'Dashboard', calendar:'Calendario', pagos:'Pagos pendientes', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
 const PAGE_ACTIONS = { products:'+ Producto', dashboard:null, calendar:'+ Nueva alerta', folders:'+ Nueva carpeta', orders:'+ Nueva orden', tracking:null, costs:null, calc:null, clients:'+ Nuevo cliente', quotes:'+ Nuevo presupuesto', suppliers:'+ Proveedor', companies:'+ Empresa' }
 const PAGE_ACTION_FNS = { products:()=>openProductModal(), calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:openNewSupplier, companies:()=>openModal('modal-company') }
 
@@ -1088,9 +1096,10 @@ function handleSearch(q) {
 
 function renderPage() {
   const el = document.getElementById('content')
-  const pages = { cashflow:renderCashflow, analysis:renderAnalysis, products:renderProducts, dashboard:renderDashboard, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
+  const pages = { dataquality:renderDataQuality, cashflow:renderCashflow, analysis:renderAnalysis, products:renderProducts, dashboard:renderDashboard, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
   if(pages[currentPage]) el.innerHTML = pages[currentPage]()
   if(currentPage === 'calc') setTimeout(initCalcPage, 0)
+  updateDataQualityBadge()
 }
 
 /* ════════════════════════════════════
@@ -5070,7 +5079,8 @@ function cashflowItems() {
     const fletePend = Math.max(0, fleteEst - totalCostosCat(o, 'naviera'))
     const tribPend = Math.max(0, trib - totalCostosCat(o, 'impuesto'))
     const locPend = Math.max(0, loc - totalCostosCat(o, 'otros'))
-    const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : null)
+    // Sin ETA: se estima con la salida (ETD + 35 días) o con el fin de producción (+ 45 días).
+    const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : o.fin_prod ? addDaysISO(o.fin_prod, 45) : null)
     const base = { orderId: o.id, code: o.code, proveedor: o.proveedor || '', basado }
     if (saldo > 0) items.push({ ...base, tipo: 'proveedor', monto: saldo, fecha: o.fin_prod || o.etd || (o.eta ? addDaysISO(o.eta, -30) : null) })
     if (fletePend > 0) items.push({ ...base, tipo: 'flete', monto: fletePend, fecha: etaish })
@@ -5143,7 +5153,8 @@ function renderCashflow() {
     }).join('')}
   </div>
   <p style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5">
-    Fechas: el saldo al proveedor se ubica en el fin de producción (o ETD); flete, tributos y gastos locales alrededor de la ETA.
+    Fechas: el saldo al proveedor se ubica en el fin de producción (o ETD); flete, tributos y gastos locales alrededor de la ETA
+    (si falta, se estima con la salida + 35 días o el fin de producción + 45 días).
     Se descuenta lo ya pagado (pestaña Pagos) y los costos ya cargados (pestaña Costos).
     Los tributos incluyen IVA y percepciones que después recuperás como crédito fiscal.${usaGenerales ? ' * Órdenes sin presupuesto: estimado con las tasas generales de la calculadora.' : ''}
   </p>`
@@ -5213,13 +5224,149 @@ function renderAnalysis() {
 }
 
 /* ════════════════════════════════════
+   DATOS A COMPLETAR
+   Revisa cada orden y muestra qué le falta, con el arreglo en el mismo lugar.
+════════════════════════════════════ */
+const DQ_ACTIVE = ['pedido', 'produccion', 'transito', 'aduana']
+const dqIn = (o, f, type, extra = '') =>
+  `<input class="input${type === 'text' ? '' : ' mono'}" type="${type}" style="max-width:190px;padding:5px 8px;font-size:12px" value="${esc(o[f] ?? '')}" ${extra} onchange="dqSet('${o.id}','${f}',this.value)"/>`
+const dqBtn = (label, onclick, primary) => `<button class="btn ${primary ? 'btn-primary' : 'btn-ghost'} btn-xs" onclick="${onclick}">${label}</button>`
+
+const DQ_CHECKS = [
+  { key: 'pagos', label: 'Lo pagado supera el FOB en más de 10%',
+    why: 'Puede haber gastos (impuestos, flete) cargados como pagos al proveedor. Distorsiona Pagos y el flujo de caja.',
+    test: o => (Number(o.fob_total) || 0) > 0 && totalPagos(o) > (Number(o.fob_total) || 0) * 1.10,
+    fix: o => `<span style="font-size:12px">FOB ${fmtUSD(o.fob_total)} · pagado <b>${fmtUSD(totalPagos(o))}</b></span> ${dqBtn('Revisar pagos', `dqOpen('${o.id}','pagos')`)}` },
+  { key: 'fin_prod', label: 'Sin fecha de fin de producción',
+    why: 'Sin esta fecha, el saldo al proveedor queda "sin fecha" en el flujo de caja.',
+    test: o => ['pedido', 'produccion'].includes(o.estado) && !o.fin_prod,
+    fix: o => dqIn(o, 'fin_prod', 'date') },
+  { key: 'eta', label: 'Sin ETA',
+    why: 'Sin ETA no se ubican el flete, los tributos ni los gastos de nacionalización en el flujo de caja.',
+    test: o => ['produccion', 'transito', 'aduana'].includes(o.estado) && !o.eta,
+    fix: o => dqIn(o, 'eta', 'date') },
+  { key: 'fin_prod_pasada', label: 'La producción ya debería haber terminado',
+    why: 'La fecha de fin de producción ya pasó y la orden sigue en Producción.',
+    test: o => o.estado === 'produccion' && o.fin_prod && o.fin_prod < todayISO(),
+    fix: o => `${dqIn(o, 'fin_prod', 'date')} ${dqBtn('Pasar a Tránsito', `dqMove('${o.id}','transito')`, true)}` },
+  { key: 'eta_pasada', label: 'La ETA ya pasó y sigue en Tránsito',
+    why: '¿Ya llegó? Pasala a Aduana, o corregí la ETA si se demoró.',
+    test: o => o.estado === 'transito' && o.eta && o.eta < todayISO(),
+    fix: o => `${dqIn(o, 'eta', 'date')} ${dqBtn('Pasar a Aduana', `dqMove('${o.id}','aduana')`, true)}` },
+  { key: 'costo', label: 'Sin costo estimado',
+    why: 'No viene de un presupuesto: los tributos se estiman con las tasas generales y el flete queda en cero. Cargá al menos el flete estimado.',
+    test: o => DQ_ACTIVE.includes(o.estado) && !o.quoteId && !(Number(o._landedTotal) > 0) && !o._estimado && !(Number(o._flete) > 0),
+    fix: o => `<span style="font-size:11px;color:var(--text2)">Flete estimado (USD)</span> ${dqIn(o, '_flete', 'number', 'min="0" step="1" placeholder="ej: 2800"')}` },
+  { key: 'bl', label: 'Sin número de BL',
+    why: 'Sin BL no se puede rastrear el embarque.',
+    test: o => ['transito', 'aduana'].includes(o.estado) && !o.bl,
+    fix: o => dqIn(o, 'bl', 'text', 'placeholder="ej: EISU9245083"') },
+  { key: 'proveedor', label: 'Sin proveedor',
+    why: 'Sin proveedor la orden no entra en el análisis por proveedor.',
+    test: o => DQ_ACTIVE.includes(o.estado) && !o.proveedor,
+    fix: o => dqIn(o, 'proveedor', 'text', 'list="dq-suppliers" placeholder="Nombre del proveedor"') },
+  { key: 'fob', label: 'FOB en cero',
+    why: 'Sin FOB no se calculan saldos, tributos ni costos.',
+    test: o => DQ_ACTIVE.includes(o.estado) && !((Number(o.fob_total) || 0) > 0),
+    fix: o => dqIn(o, 'fob_total', 'number', 'min="0" step="0.01"') },
+  { key: 'docs', label: 'Documentos faltantes',
+    why: 'Documentos que ya deberían estar para la etapa actual.',
+    test: o => docsMissing(o).length > 0,
+    fix: o => `<span style="font-size:12px">${esc(docsMissing(o).map(d => d.label).join(', '))}</span> ${dqBtn('Ver documentos', `dqOpen('${o.id}','documentos')`)}` },
+  { key: 'reales', label: 'Entregada sin valores reales',
+    why: 'Sin los valores reales no se puede comparar el costo estimado con el real.',
+    test: o => o.estado === 'entregado' && !o._valoresReales,
+    fix: o => dqBtn('Cargar valores reales', `openRealValuesModal('${o.id}')`, true) },
+]
+
+let dqFilter = 'all'
+
+function dataQualityIssues() {
+  return ordersByCompany()
+    .filter(o => DQ_ACTIVE.includes(o.estado) || o.estado === 'entregado')
+    .map(o => ({ o, issues: DQ_CHECKS.filter(c => { try { return c.test(o) } catch { return false } }) }))
+    .filter(r => r.issues.length)
+}
+
+function updateDataQualityBadge() {
+  const el = document.getElementById('dq-badge'); if (!el || !currentUser) return
+  let n = 0; try { n = dataQualityIssues().reduce((s, r) => s + r.issues.length, 0) } catch {}
+  el.textContent = n; el.style.display = n ? '' : 'none'
+}
+
+function renderDataQuality() {
+  const rows = dataQualityIssues()
+  if (!rows.length) return `<div class="card" style="text-align:center;padding:40px;color:var(--text3)">
+    <div style="font-size:34px;margin-bottom:10px">✅</div>
+    <div style="font-weight:600;color:var(--text2)">Todas las órdenes tienen sus datos completos.</div></div>`
+  const counts = Object.fromEntries(DQ_CHECKS.map(c => [c.key, rows.filter(r => r.issues.includes(c)).length]))
+  const total = rows.reduce((s, r) => s + r.issues.length, 0)
+  const shown = dqFilter === 'all' ? rows : rows.filter(r => r.issues.some(i => i.key === dqFilter))
+  const chip = (key, label, n) => `<div class="chip${dqFilter === key ? ' active' : ''}" onclick="dqFilter='${key}';renderPage()">${label} <b style="font-family:var(--mono);margin-left:3px">${n}</b></div>`
+  return `
+  <p style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">
+    ${total} dato${total > 1 ? 's' : ''} para completar en ${rows.length} ${rows.length > 1 ? 'órdenes' : 'orden'}.
+    Completarlos hace que el flujo de caja, los documentos y el análisis estimado vs. real muestren números reales.
+    Los cambios se guardan apenas salís del campo.
+  </p>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    ${chip('all', 'Todos', total)}
+    ${DQ_CHECKS.filter(c => counts[c.key]).map(c => chip(c.key, c.label, counts[c.key])).join('')}
+  </div>
+  <datalist id="dq-suppliers">${getSuppliers().map(s => `<option value="${esc(s.nombre)}">`).join('')}</datalist>
+  ${shown.map(({ o, issues }) => `
+    <div class="card mb12" style="padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface2);flex-wrap:wrap">
+        <span class="mono" style="font-weight:700;cursor:pointer" onclick="openDetail('${o.id}')">${esc(o.code)}</span>
+        ${badge(o.estado)}
+        <span style="font-size:12px;color:var(--text2);flex:1">${esc(o.proveedor || '')}</span>
+        ${dqBtn('Abrir orden', `openDetail('${o.id}')`)}
+      </div>
+      ${issues.filter(i => dqFilter === 'all' || i.key === dqFilter).map(i => `
+        <div style="display:grid;grid-template-columns:minmax(200px,1fr) minmax(240px,1.3fr);gap:12px;padding:10px 14px;border-top:1px solid var(--border);align-items:center">
+          <div><div style="font-size:13px;font-weight:600">${i.label}</div><div style="font-size:11px;color:var(--text3);line-height:1.4">${i.why}</div></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${i.fix(o)}</div>
+        </div>`).join('')}
+    </div>`).join('')}`
+}
+
+const DQ_NUMERIC = ['fob_total', '_flete']
+function dqSet(orderId, field, value) {
+  const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
+  const v = DQ_NUMERIC.includes(field) ? (parseFloat(value) || 0) : value.trim()
+  if (o[field] === v) return
+  o[field] = v
+  trackOrderChange(o, o.estado)
+  saveOrders(orders)
+  toast(`${o.code}: guardado ✓`)
+  renderPage()
+}
+
+function dqMove(orderId, estado) {
+  const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
+  const prev = o.estado
+  o.estado = estado
+  trackOrderChange(o, prev)
+  saveOrders(orders)
+  const faltan = docsMissing(o)
+  toast(`${o.code} → ${S_LABELS[estado]}${faltan.length ? ' · ⚠️ faltan: ' + faltan.map(d => d.label).join(', ') : ''}`)
+  renderPage()
+  if (estado === 'entregado' && prev !== 'entregado') setTimeout(() => openRealValuesModal(orderId), 400)
+}
+
+function dqOpen(orderId, tab) {
+  openDetail(orderId)
+  renderDetailTabs(getOrders().find(x => x.id === orderId), tab)
+}
+
+/* ════════════════════════════════════
    SISTEMA DE USUARIOS Y PERMISOS
    Login con Firebase Auth. Los permisos de cada persona viven en
    la colección "access" (un documento por email), que las reglas
    de Firestore usan para decidir quién puede leer y escribir.
 ════════════════════════════════════ */
 const ALL_SECTIONS = [
-  ['dashboard','📊 Dashboard'],['calendar','📅 Calendario'],['folders','📁 Carpetas'],
+  ['dashboard','📊 Dashboard'],['dataquality','🧹 Datos a completar'],['calendar','📅 Calendario'],['folders','📁 Carpetas'],
   ['orders','📦 Órdenes'],['tracking','🚢 Tracking'],['costs','💰 Costos'],['calc','🧮 Calculadora'],
   ['cashflow','📈 Flujo de caja'],['analysis','🎯 Estimado vs. real'],['products','🏷️ Productos'],
   ['clients','👥 Clientes'],['quotes','📋 Presupuestos'],['suppliers','🏭 Proveedores'],['companies','🏢 Empresas']
