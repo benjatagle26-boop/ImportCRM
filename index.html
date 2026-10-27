@@ -726,29 +726,67 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
    FIREBASE — dynamic import (global scope)
 ════════════════════════════════════ */
 window._fbCache = {}
-window._fbReady = false
-window._fbOnReady = null
+const FB_BASE = 'https://www.gstatic.com/firebasejs/10.12.0/'
+const FB_CONFIG = {
+  apiKey: "AIzaSyB-XfZ70drdfbNNEcJeRdcRG-cuRI-JlP0",
+  authDomain: "impo-crm.firebaseapp.com",
+  projectId: "impo-crm",
+  storageBucket: "impo-crm.firebasestorage.app",
+  messagingSenderId: "950078090093",
+  appId: "1:950078090093:web:cdc356835ef83b35f30864"
+}
 
+// Los datos se cargan recién después de que Firebase Auth confirma
+// quién es el usuario y que tiene un permiso en la colección "access".
 ;(async function() {
+  let fb
   try {
-    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js')
-    const { getFirestore, doc, setDoc, getDocs, collection } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')
-    const app = initializeApp({
-      apiKey: "AIzaSyB-XfZ70drdfbNNEcJeRdcRG-cuRI-JlP0",
-      authDomain: "impo-crm.firebaseapp.com",
-      projectId: "impo-crm",
-      storageBucket: "impo-crm.firebasestorage.app",
-      messagingSenderId: "950078090093",
-      appId: "1:950078090093:web:cdc356835ef83b35f30864"
-    })
-    const db = getFirestore(app)
-    const snap = await getDocs(collection(db, 'crm'))
-    snap.forEach(d => { try { window._fbCache[d.id] = JSON.parse(d.data().data) } catch {} })
-    window._fbWrite = (k, v) => setDoc(doc(db, 'crm', k), { data: JSON.stringify(v) }).catch(console.error)
-  } catch(e) { console.error('Firebase init error:', e) }
-  window._fbReady = true
-  if (window._fbOnReady) window._fbOnReady()
+    const appMod = await import(FB_BASE + 'firebase-app.js')
+    const fs = await import(FB_BASE + 'firebase-firestore.js')
+    const au = await import(FB_BASE + 'firebase-auth.js')
+    const app = appMod.initializeApp(FB_CONFIG)
+    fb = { appMod, fs, au, app, db: fs.getFirestore(app), auth: au.getAuth(app) }
+    window._fb = fb
+  } catch (e) {
+    console.error('Firebase init error:', e)
+    return renderFatal('No se pudo conectar con Firebase. Revisá tu conexión a internet y recargá la página.')
+  }
+  fb.au.onAuthStateChanged(fb.auth, user => onAuthChange(user).catch(e => {
+    console.error(e)
+    renderFatal('Error al cargar los datos: ' + (e?.code || e?.message || e))
+  }))
 })()
+
+async function onAuthChange(user) {
+  const fb = window._fb
+  // El login reemplaza la página entera; al ingresar, recargamos para volver a armarla.
+  if (user && window._loginShown) { location.reload(); return }
+  if (!user) { renderLogin(); return }
+  if (!user.emailVerified) { renderVerifyEmail(user); return }
+
+  const email = user.email.toLowerCase()
+  let accessSnap
+  try { accessSnap = await fb.fs.getDoc(fb.fs.doc(fb.db, 'access', email)) }
+  catch (e) { if (e?.code !== 'permission-denied') throw e }
+  if (!accessSnap || !accessSnap.exists()) { renderNoAccess(email); return }
+
+  const snap = await fb.fs.getDocs(fb.fs.collection(fb.db, 'crm'))
+  snap.forEach(d => { try { window._fbCache[d.id] = JSON.parse(d.data().data) } catch {} })
+  window._fbWrite = (k, v) => fb.fs.setDoc(fb.fs.doc(fb.db, 'crm', k), { data: JSON.stringify(v) })
+    .catch(e => { console.error('Error al guardar', k, e); saveError(e) })
+
+  const a = accessSnap.data()
+  currentUser = { id: email, email, username: email, nombre: a.nombre || email, rol: a.rol === 'admin' ? 'admin' : 'user',
+                  empresas: a.empresas ?? 'all', secciones: a.secciones ?? 'all' }
+  _startApp()
+}
+
+function saveError(e) {
+  const msg = e?.code === 'permission-denied'
+    ? '⚠️ No se guardó: no tenés permiso para este cambio'
+    : '⚠️ No se guardó el cambio. Revisá tu conexión y recargá.'
+  try { toast(msg) } catch { alert(msg) }
+}
 
 /* ════════════════════════════════════
    DATA LAYER — Firebase Firestore
@@ -4511,6 +4549,9 @@ function changeQuoteStatus(id,estado){changeQStatus(id,estado)}
 
 /* ════════════════════════════════════
    SISTEMA DE USUARIOS Y PERMISOS
+   Login con Firebase Auth. Los permisos de cada persona viven en
+   la colección "access" (un documento por email), que las reglas
+   de Firestore usan para decidir quién puede leer y escribir.
 ════════════════════════════════════ */
 const ALL_SECTIONS = [
   ['dashboard','📊 Dashboard'],['calendar','📅 Calendario'],['folders','📁 Carpetas'],
@@ -4518,28 +4559,11 @@ const ALL_SECTIONS = [
   ['clients','👥 Clientes'],['quotes','📋 Presupuestos'],['suppliers','🏭 Proveedores'],['companies','🏢 Empresas']
 ]
 
-function getUsers() { return DB.get('users') || [] }
-function saveUsers(a) { DB.set('users', a) }
 let currentUser = null
 
-function ensureAdminUser() {
-  const users = getUsers()
-  if (users.length === 0) {
-    users.push({ id: uid(), username: 'admin', password: 'admin123', nombre: 'Administrador', rol: 'admin', empresas: 'all', secciones: 'all' })
-    saveUsers(users)
-  }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
 }
-
-function doLogin(username, password) {
-  const users = getUsers()
-  const user = users.find(u => u.username.toLowerCase() === username.toLowerCase().trim() && u.password === password)
-  if (!user) return false
-  currentUser = user
-  try { sessionStorage.setItem('icrm_session', user.id) } catch {}
-  return true
-}
-
-function doLogout() { currentUser = null; try { sessionStorage.removeItem('icrm_session') } catch {}; location.reload() }
 
 function userCanSee(section) {
   if (!currentUser) return false
@@ -4554,34 +4578,123 @@ function userCanSeeCompany(companyId) {
   return (currentUser.empresas || []).includes(companyId)
 }
 
-function renderLogin() {
+/* ── Pantallas de acceso ── */
+function authScreen(inner) {
+  window._loginShown = true
   document.body.innerHTML = `
-  <div style="position:fixed;inset:0;background:linear-gradient(135deg,#1e3a8a,#1e40af,#3730a3);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Sans',sans-serif">
-    <div style="background:#fff;border-radius:16px;padding:40px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-      <div style="text-align:center;margin-bottom:28px">
+  <div style="position:fixed;inset:0;background:linear-gradient(135deg,#1e3a8a,#1e40af,#3730a3);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Sans',sans-serif;padding:16px">
+    <div style="background:#fff;border-radius:16px;padding:36px;width:380px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);color:#18180F">
+      <div style="text-align:center;margin-bottom:24px">
         <div style="font-size:40px;margin-bottom:8px">📦</div>
-        <div style="font-size:22px;font-weight:700;color:#18180F;font-family:monospace">ImportCRM</div>
-        <div style="font-size:13px;color:#6A6A5E;margin-top:4px">Ingresá para continuar</div>
+        <div style="font-size:22px;font-weight:700;font-family:monospace">ImportCRM</div>
       </div>
-      <div style="margin-bottom:14px">
-        <label style="font-size:11px;font-weight:700;color:#6A6A5E;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">Usuario</label>
-        <input id="login-user" style="width:100%;padding:11px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box" placeholder="usuario" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"/>
-      </div>
-      <div style="margin-bottom:20px">
-        <label style="font-size:11px;font-weight:700;color:#6A6A5E;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px">Contraseña</label>
-        <input id="login-pass" type="password" style="width:100%;padding:11px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box" placeholder="••••••••" onkeydown="if(event.key==='Enter')attemptLogin()"/>
-      </div>
-      <button onclick="attemptLogin()" style="width:100%;padding:12px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Ingresar</button>
-      <div id="login-error" style="color:#DC2626;font-size:12px;text-align:center;margin-top:12px;min-height:16px"></div>
+      ${inner}
     </div>
   </div>`
 }
+const AUTH_INPUT = 'width:100%;padding:11px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box'
+const AUTH_LABEL = 'font-size:11px;font-weight:700;color:#6A6A5E;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px'
+const AUTH_BTN = 'width:100%;padding:12px;background:#1D4ED8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer'
+const AUTH_LINK = 'background:none;border:none;color:#1D4ED8;font-size:12px;cursor:pointer;padding:0'
+const AUTH_MSG = 'font-size:12px;text-align:center;margin-top:12px;min-height:16px'
 
-function attemptLogin() {
-  const u = document.getElementById('login-user').value
-  const p = document.getElementById('login-pass').value
-  if (doLogin(u, p)) { location.reload() }
-  else { document.getElementById('login-error').textContent = 'Usuario o contraseña incorrectos' }
+function renderLogin() {
+  authScreen(`
+    <div style="font-size:13px;color:#6A6A5E;text-align:center;margin:-12px 0 22px">Ingresá para continuar</div>
+    <div style="margin-bottom:14px">
+      <label style="${AUTH_LABEL}">Email</label>
+      <input id="login-user" type="email" autocomplete="username" style="${AUTH_INPUT}" placeholder="vos@empresa.com" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"/>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="${AUTH_LABEL}">Contraseña</label>
+      <input id="login-pass" type="password" autocomplete="current-password" style="${AUTH_INPUT}" placeholder="••••••••" onkeydown="if(event.key==='Enter')attemptLogin()"/>
+    </div>
+    <button id="login-btn" onclick="attemptLogin()" style="${AUTH_BTN}">Ingresar</button>
+    <div style="text-align:center;margin-top:14px"><button onclick="forgotPassword()" style="${AUTH_LINK}">¿Olvidaste tu contraseña?</button></div>
+    <div id="login-error" style="${AUTH_MSG};color:#DC2626"></div>`)
+}
+
+async function attemptLogin() {
+  const email = document.getElementById('login-user').value.trim()
+  const pass = document.getElementById('login-pass').value
+  const err = document.getElementById('login-error')
+  const btn = document.getElementById('login-btn')
+  if (!email || !pass) { err.textContent = 'Completá email y contraseña'; return }
+  btn.disabled = true; btn.textContent = 'Ingresando...'; err.textContent = ''
+  try {
+    await window._fb.au.signInWithEmailAndPassword(window._fb.auth, email, pass)
+    // onAuthStateChanged recarga la página
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Ingresar'
+    err.textContent = e?.code === 'auth/too-many-requests'
+      ? 'Demasiados intentos. Esperá unos minutos o restablecé tu contraseña.'
+      : e?.code === 'auth/network-request-failed' ? 'Sin conexión. Revisá internet.'
+      : 'Email o contraseña incorrectos'
+  }
+}
+
+async function forgotPassword() {
+  const email = document.getElementById('login-user').value.trim()
+  const err = document.getElementById('login-error')
+  if (!email) { err.style.color = '#DC2626'; err.textContent = 'Escribí tu email arriba y volvé a tocar el link'; return }
+  try { await window._fb.au.sendPasswordResetEmail(window._fb.auth, email) } catch (e) { console.error(e) }
+  err.style.color = '#16A34A'
+  err.textContent = 'Si ese email tiene cuenta, te llegó un link para elegir una contraseña nueva.'
+}
+
+function renderVerifyEmail(user) {
+  authScreen(`
+    <div style="font-size:14px;line-height:1.5;margin-bottom:18px;text-align:center">
+      Antes de entrar tenés que confirmar tu email<br><b>${esc(user.email)}</b>.
+    </div>
+    <button onclick="sendVerification()" style="${AUTH_BTN};margin-bottom:10px">Enviarme el email de confirmación</button>
+    <button onclick="checkVerified()" style="${AUTH_BTN};background:#fff;color:#1D4ED8;border:1px solid #1D4ED8">Ya lo confirmé</button>
+    <div style="text-align:center;margin-top:14px"><button onclick="doLogout()" style="${AUTH_LINK}">Cerrar sesión</button></div>
+    <div id="verify-msg" style="${AUTH_MSG}"></div>`)
+}
+
+async function sendVerification() {
+  const msg = document.getElementById('verify-msg')
+  try {
+    await window._fb.au.sendEmailVerification(window._fb.auth.currentUser)
+    msg.style.color = '#16A34A'; msg.textContent = 'Listo. Abrí el link del email y después tocá "Ya lo confirmé".'
+  } catch (e) {
+    msg.style.color = '#DC2626'
+    msg.textContent = e?.code === 'auth/too-many-requests' ? 'Ya te enviamos uno hace poco. Revisá tu bandeja (y spam).' : 'No se pudo enviar el email.'
+  }
+}
+
+async function checkVerified() {
+  const user = window._fb.auth.currentUser
+  await user.reload()
+  if (user.emailVerified) {
+    await user.getIdToken(true) // las reglas leen email_verified del token
+    location.reload()
+  } else {
+    const msg = document.getElementById('verify-msg')
+    msg.style.color = '#DC2626'; msg.textContent = 'Todavía figura sin confirmar. Abrí el link del email.'
+  }
+}
+
+function renderNoAccess(email) {
+  authScreen(`
+    <div style="font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px">
+      La cuenta <b>${esc(email)}</b> no tiene acceso a este CRM.<br>
+      <span style="color:#6A6A5E;font-size:13px">Pedile al administrador que te habilite.</span>
+    </div>
+    <button onclick="doLogout()" style="${AUTH_BTN}">Cerrar sesión</button>`)
+}
+
+function renderFatal(text) {
+  authScreen(`
+    <div style="font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px">${esc(text)}</div>
+    <button onclick="location.reload()" style="${AUTH_BTN}">Reintentar</button>`)
+}
+
+async function doLogout() {
+  currentUser = null
+  try { await window._fb.au.signOut(window._fb.auth) } catch {}
+  location.reload()
 }
 
 function applyUserPermissions() {
@@ -4597,46 +4710,89 @@ function applyUserPermissions() {
     box.id = 'user-info-box'
     box.style.cssText = 'margin-top:auto;padding:12px 14px;border-top:1px solid var(--border);font-size:12px'
     box.innerHTML = `
-      <div style="font-weight:700;color:var(--text)">${currentUser.nombre||currentUser.username}</div>
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:8px">${currentUser.rol==='admin'?'Administrador':'Usuario'}</div>
+      <div style="font-weight:700;color:var(--text)">${esc(currentUser.nombre)}</div>
+      <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis">${esc(currentUser.email)} · ${currentUser.rol==='admin'?'ADMIN':'USUARIO'}</div>
       ${currentUser.rol==='admin'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="nav('users')">👤 Gestionar usuarios</button>`:''}
       <button class="btn btn-ghost btn-sm" style="width:100%" onclick="doLogout()">Cerrar sesión</button>`
     nav.appendChild(box)
   }
 }
 
-function renderUsers() {
-  if (currentUser?.rol !== 'admin') return '<div class="empty"><div class="empty-title">Acceso restringido</div></div>'
-  const users = getUsers()
-  const companies = getCompanies()
-  return `
-  <div class="flex-between mb14">
-    <span class="section-title">Usuarios del sistema</span>
-    <button class="btn btn-primary btn-sm" onclick="openUserModal()">+ Nuevo usuario</button>
-  </div>
-  <div class="entity-grid">
-    ${users.map(u=>{
-      const empresasTxt = u.empresas==='all' ? 'Todas las empresas' : (u.empresas||[]).map(id=>companies.find(c=>c.id===id)?.nombre||'—').join(', ')
-      const seccionesTxt = u.secciones==='all' ? 'Acceso completo' : `${(u.secciones||[]).length} secciones`
-      return `<div class="card">
-        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
-          <div class="entity-avatar" style="background:${u.rol==='admin'?'var(--purple-bg)':'var(--blue-bg)'};color:${u.rol==='admin'?'var(--purple-t)':'var(--blue-t)'}">${(u.nombre||u.username).slice(0,2).toUpperCase()}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:14px">${u.nombre||u.username}</div>
-            <div style="font-size:11px;color:var(--text3)">@${u.username} · ${u.rol==='admin'?'Admin':'Usuario'}</div>
-          </div>
-          <button class="btn btn-ghost btn-xs" onclick="openUserModal('${u.id}')" title="Editar">✏️</button>
-          ${u.id!==currentUser.id?`<button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteUser('${u.id}')" title="Eliminar">🗑</button>`:''}
-        </div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">🏢 ${empresasTxt}</div>
-        <div style="font-size:12px;color:var(--text2)">🔑 ${seccionesTxt}</div>
-      </div>`
-    }).join('')}
-  </div>`
+/* ── Gestión de usuarios (solo admin) ── */
+let _accessList = []   // [{ email, nombre, rol, empresas, secciones }]
+
+// Usuarios del sistema anterior (guardados en crm/users con contraseña).
+function getLegacyUsers() { return DB.get('users') || [] }
+function saveLegacyUsers(a) { DB.set('users', a) }
+function stripLegacyPasswords() {
+  const legacy = getLegacyUsers()
+  if (legacy.some(u => 'password' in u)) saveLegacyUsers(legacy.map(({ password, ...rest }) => rest))
 }
 
-function openUserModal(userId) {
-  const editUser = userId ? getUsers().find(u=>u.id===userId) : null
+function renderUsers() {
+  if (currentUser?.rol !== 'admin') return '<div class="empty"><div class="empty-title">Acceso restringido</div></div>'
+  setTimeout(loadUsersList, 0)
+  const legacy = getLegacyUsers()
+  return `
+  <div class="flex-between mb14">
+    <span class="section-title">Usuarios con acceso</span>
+    <button class="btn btn-primary btn-sm" onclick="openUserModal()">+ Nuevo usuario</button>
+  </div>
+  <div class="entity-grid" id="users-list"><p class="text-muted" style="font-size:12px">Cargando...</p></div>
+  ${legacy.length ? `
+  <hr class="divider"/>
+  <div class="section-title mb8">Usuarios del sistema anterior (${legacy.length})</div>
+  <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Estos usuarios entraban con usuario y contraseña viejos, que ya no funcionan. Tocá <b>Migrar</b>, cargá su email y le llega un link para elegir su contraseña.</p>
+  <div class="entity-grid">
+    ${legacy.map((u, i) => `<div class="card">
+      <div style="font-weight:700;font-size:14px">${esc(u.nombre || u.username)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">@${esc(u.username)} · ${u.rol==='admin'?'Admin':'Usuario'}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-xs" onclick="openUserModal(null, ${i})">Migrar</button>
+        <button class="btn btn-ghost btn-xs" onclick="discardLegacyUser(${i})">Descartar</button>
+      </div>
+    </div>`).join('')}
+  </div>` : ''}`
+}
+
+async function loadUsersList() {
+  const el = document.getElementById('users-list')
+  if (!el) return
+  const fb = window._fb
+  try {
+    const snap = await fb.fs.getDocs(fb.fs.collection(fb.db, 'access'))
+    _accessList = []
+    snap.forEach(d => _accessList.push({ email: d.id, ...d.data() }))
+    _accessList.sort((a, b) => a.email.localeCompare(b.email))
+  } catch (e) {
+    console.error(e); el.innerHTML = '<p style="font-size:12px;color:var(--red-t)">No se pudo cargar la lista de usuarios.</p>'; return
+  }
+  const companies = getCompanies()
+  el.innerHTML = _accessList.map(u => {
+    const empresasTxt = u.empresas === 'all' || u.rol === 'admin' ? 'Todas las empresas' : (u.empresas||[]).map(id=>companies.find(c=>c.id===id)?.nombre||'—').join(', ') || 'Ninguna'
+    const seccionesTxt = u.secciones === 'all' || u.rol === 'admin' ? 'Acceso completo' : `${(u.secciones||[]).length} secciones`
+    const isMe = u.email === currentUser.email
+    return `<div class="card">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+        <div class="entity-avatar" style="background:${u.rol==='admin'?'var(--purple-bg)':'var(--blue-bg)'};color:${u.rol==='admin'?'var(--purple-t)':'var(--blue-t)'}">${esc((u.nombre||u.email).slice(0,2).toUpperCase())}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px">${esc(u.nombre||u.email)}${isMe?' <span style="font-size:10px;color:var(--text3)">(vos)</span>':''}</div>
+          <div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis">${esc(u.email)} · ${u.rol==='admin'?'Admin':'Usuario'}</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="openUserModal('${esc(u.email)}')" title="Editar">✏️</button>
+        ${!isMe?`<button class="btn btn-ghost btn-xs" style="color:var(--red-t)" onclick="deleteUser('${esc(u.email)}')" title="Quitar acceso">🗑</button>`:''}
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:3px">🏢 ${esc(empresasTxt)}</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">🔑 ${esc(seccionesTxt)}</div>
+      <button class="btn btn-ghost btn-xs" onclick="resetUserPassword('${esc(u.email)}')">✉️ Enviar link de contraseña</button>
+    </div>`
+  }).join('') || '<p class="text-muted" style="font-size:12px">Sin usuarios.</p>'
+}
+
+function openUserModal(email, legacyIdx) {
+  const editUser = email ? _accessList.find(u => u.email === email) : (legacyIdx != null ? getLegacyUsers()[legacyIdx] : null)
+  const isEdit = !!email
+  const isMe = isEdit && email === currentUser.email
   const companies = getCompanies()
   let el = document.getElementById('modal-user')
   if (!el) { el = document.createElement('div'); el.id='modal-user'; el.className='modal-overlay'; el.onclick=e=>{if(e.target===el)el.classList.remove('open')}; document.body.appendChild(el) }
@@ -4644,22 +4800,20 @@ function openUserModal(userId) {
   const uSecciones = editUser?.secciones || 'all'
   const empresasAll = uEmpresas === 'all'
   const seccionesAll = uSecciones === 'all'
-  const empInc = (id) => empresasAll ? false : (Array.isArray(uEmpresas) && uEmpresas.includes(id))
-  const secInc = (k) => seccionesAll ? false : (Array.isArray(uSecciones) && uSecciones.includes(k))
+  const empInc = (id) => !empresasAll && Array.isArray(uEmpresas) && uEmpresas.includes(id)
+  const secInc = (k) => !seccionesAll && Array.isArray(uSecciones) && uSecciones.includes(k)
   el.innerHTML = `<div class="modal modal-sm">
-    <div class="modal-header"><span class="modal-title">${editUser?'Editar':'Nuevo'} usuario</span><button class="modal-close" onclick="document.getElementById('modal-user').classList.remove('open')">✕</button></div>
+    <div class="modal-header"><span class="modal-title">${isEdit?'Editar usuario':legacyIdx!=null?'Migrar usuario':'Nuevo usuario'}</span><button class="modal-close" onclick="document.getElementById('modal-user').classList.remove('open')">✕</button></div>
     <div class="form-row mb12">
-      <div class="form-group"><label class="label">Nombre</label><input class="input" id="u-nombre" value="${editUser?.nombre||''}" placeholder="Juan Pérez"/></div>
-      <div class="form-group"><label class="label">Usuario <span class="req">*</span></label><input class="input" id="u-username" value="${editUser?.username||''}" placeholder="juan"/></div>
+      <div class="form-group"><label class="label">Nombre</label><input class="input" id="u-nombre" value="${esc(editUser?.nombre||'')}" placeholder="Juan Pérez"/></div>
+      <div class="form-group"><label class="label">Email <span class="req">*</span></label><input class="input" id="u-email" type="email" value="${esc(isEdit?email:'')}" ${isEdit?'disabled':''} placeholder="juan@empresa.com"/></div>
     </div>
-    <div class="form-row mb12">
-      <div class="form-group"><label class="label">Contraseña <span class="req">*</span></label><input class="input" id="u-password" value="${editUser?.password||''}" placeholder="••••••"/></div>
-      <div class="form-group"><label class="label">Rol</label>
-        <select class="select" id="u-rol" onchange="toggleUserRolFields()">
-          <option value="user" ${editUser?.rol!=='admin'?'selected':''}>Usuario</option>
-          <option value="admin" ${editUser?.rol==='admin'?'selected':''}>Administrador (ve todo)</option>
-        </select>
-      </div>
+    ${isEdit?'':`<p style="font-size:12px;color:var(--text2);margin:-4px 0 12px">Le va a llegar un email para que elija su contraseña.</p>`}
+    <div class="form-group mb12"><label class="label">Rol</label>
+      <select class="select" id="u-rol" onchange="toggleUserRolFields()" ${isMe?'disabled title="No podés cambiar tu propio rol"':''}>
+        <option value="user" ${editUser?.rol!=='admin'?'selected':''}>Usuario</option>
+        <option value="admin" ${editUser?.rol==='admin'?'selected':''}>Administrador (ve todo)</option>
+      </select>
     </div>
     <div id="u-permisos" style="${editUser?.rol==='admin'?'display:none':''}">
       <hr class="divider"/>
@@ -4669,7 +4823,7 @@ function openUserModal(userId) {
         <span style="font-size:13px;font-weight:600">Todas las empresas</span>
       </label>
       <div id="u-emp-list" style="${empresasAll?'opacity:.4;pointer-events:none':''};display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
-        ${companies.map(c=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="u-emp-check" value="${c.id}" ${empInc(c.id)?'checked':''}/>${c.nombre}</label>`).join('')}
+        ${companies.map(c=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="u-emp-check" value="${esc(c.id)}" ${empInc(c.id)?'checked':''}/>${esc(c.nombre)}</label>`).join('')}
       </div>
       <div class="section-title mb8">🔑 Secciones que puede ver</div>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
@@ -4682,7 +4836,7 @@ function openUserModal(userId) {
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost" onclick="document.getElementById('modal-user').classList.remove('open')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveUser('${userId||''}')">Guardar</button>
+      <button class="btn btn-primary" id="u-save-btn" onclick="saveUser(${isEdit?`'${esc(email)}'`:'null'}, ${legacyIdx ?? 'null'})">Guardar</button>
     </div>
   </div>`
   el.classList.add('open')
@@ -4692,53 +4846,103 @@ function toggleUserRolFields() { document.getElementById('u-permisos').style.dis
 function toggleEmpAll() { const all = document.getElementById('u-emp-all').checked; const l = document.getElementById('u-emp-list'); l.style.opacity = all?'.4':'1'; l.style.pointerEvents = all?'none':'auto' }
 function toggleSecAll() { const all = document.getElementById('u-sec-all').checked; const l = document.getElementById('u-sec-list'); l.style.opacity = all?'.4':'1'; l.style.pointerEvents = all?'none':'auto' }
 
-function saveUser(userId) {
-  const username = document.getElementById('u-username').value.trim()
-  const password = document.getElementById('u-password').value
-  if (!username || !password) return alert('Usuario y contraseña son requeridos')
-  const rol = document.getElementById('u-rol').value
+// Crea la cuenta de Firebase Auth con una contraseña al azar que nadie conoce,
+// usando una instancia aparte para no cerrar la sesión del admin.
+async function createAuthAccount(email) {
+  const { appMod, au } = window._fb
+  const sec = appMod.initializeApp(FB_CONFIG, 'alta-' + Date.now())
+  try {
+    const sAuth = au.initializeAuth(sec, { persistence: au.inMemoryPersistence })
+    const bytes = crypto.getRandomValues(new Uint8Array(24))
+    const pwd = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('') + 'Aa1!'
+    await au.createUserWithEmailAndPassword(sAuth, email, pwd)
+    await au.signOut(sAuth).catch(() => {})
+    return 'created'
+  } catch (e) {
+    if (e?.code === 'auth/email-already-in-use') return 'exists'
+    console.error(e); return 'error:' + (e?.code || e?.message)
+  } finally {
+    appMod.deleteApp(sec).catch(() => {})
+  }
+}
+
+async function saveUser(editEmail, legacyIdx) {
+  const fb = window._fb
+  const email = (editEmail || document.getElementById('u-email').value).trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return alert('Ingresá un email válido')
+  const rol = editEmail === currentUser.email ? 'admin' : document.getElementById('u-rol').value
   let empresas = 'all', secciones = 'all'
   if (rol !== 'admin') {
     empresas = document.getElementById('u-emp-all').checked ? 'all' : Array.from(document.querySelectorAll('.u-emp-check:checked')).map(c=>c.value)
     secciones = document.getElementById('u-sec-all').checked ? 'all' : Array.from(document.querySelectorAll('.u-sec-check:checked')).map(c=>c.value)
   }
-  const data = { nombre: document.getElementById('u-nombre').value.trim(), username, password, rol, empresas, secciones }
-  const users = getUsers()
-  if (userId) {
-    const idx = users.findIndex(u=>u.id===userId)
-    if (idx>=0) users[idx] = { ...users[idx], ...data }
-  } else {
-    if (users.some(u=>u.username.toLowerCase()===username.toLowerCase())) return alert('Ya existe un usuario con ese nombre')
-    users.push({ id: uid(), ...data })
+  const data = { nombre: document.getElementById('u-nombre').value.trim(), rol, empresas, secciones }
+  if (!editEmail && _accessList.some(u => u.email === email)) return alert('Ese email ya tiene acceso')
+
+  const btn = document.getElementById('u-save-btn'); btn.disabled = true; btn.textContent = 'Guardando...'
+  try {
+    await fb.fs.setDoc(fb.fs.doc(fb.db, 'access', email), data, { merge: true })
+  } catch (e) {
+    console.error(e); btn.disabled = false; btn.textContent = 'Guardar'
+    return alert('No se pudo guardar el usuario: ' + (e?.code || e?.message))
   }
-  saveUsers(users)
+
+  if (!editEmail) {
+    const r = await createAuthAccount(email)
+    if (r === 'created') {
+      await fb.au.sendPasswordResetEmail(fb.auth, email).catch(console.error)
+      toast('Usuario creado ✓ Le enviamos un email para elegir su contraseña')
+    } else if (r === 'exists') {
+      toast('Acceso habilitado ✓ (esa cuenta ya existía)')
+    } else {
+      alert(`El permiso quedó guardado, pero no se pudo crear la cuenta (${r.slice(6)}).\n\nCreala a mano en la consola de Firebase: Authentication → Users → Add user, con el email ${email}. Después tocá "Enviar link de contraseña" en su tarjeta.`)
+    }
+    if (legacyIdx != null) {
+      const legacy = getLegacyUsers(); legacy.splice(legacyIdx, 1); saveLegacyUsers(legacy)
+    }
+  } else {
+    toast('Usuario actualizado ✓')
+  }
   document.getElementById('modal-user').classList.remove('open')
-  toast(userId ? 'Usuario actualizado ✓' : 'Usuario creado ✓')
   renderPage()
 }
 
-function deleteUser(id) {
-  const u = getUsers().find(x=>x.id===id)
-  if (!u) return
-  if (!confirm(`¿Eliminar al usuario "${u.username}"?`)) return
-  saveUsers(getUsers().filter(x=>x.id!==id))
-  toast('Usuario eliminado'); renderPage()
+async function resetUserPassword(email) {
+  try {
+    await window._fb.au.sendPasswordResetEmail(window._fb.auth, email)
+    toast('Link enviado a ' + email)
+  } catch (e) { console.error(e); alert('No se pudo enviar el email: ' + (e?.code || e?.message)) }
+}
+
+async function deleteUser(email) {
+  if (email === currentUser.email) return
+  if (!confirm(`¿Quitarle el acceso a ${email}?`)) return
+  const fb = window._fb
+  try {
+    await fb.fs.deleteDoc(fb.fs.doc(fb.db, 'access', email))
+    toast('Acceso quitado'); renderPage()
+  } catch (e) { console.error(e); alert('No se pudo quitar el acceso: ' + (e?.code || e?.message)) }
+}
+
+function discardLegacyUser(idx) {
+  const legacy = getLegacyUsers()
+  const u = legacy[idx]; if (!u) return
+  if (!confirm(`¿Descartar a "${u.username}" del sistema anterior? No se le crea acceso nuevo.`)) return
+  legacy.splice(idx, 1); saveLegacyUsers(legacy)
+  renderPage()
 }
 
 
 /* ════════════════════════════════════
-   INIT — Wait for Firebase then render
+   INIT — se llama desde onAuthChange cuando el usuario tiene acceso
 ════════════════════════════════════ */
 let currentCompanyId = null
 
 function _startApp() {
-  ensureAdminUser()
-  // Clear any old shared session that leaked into Firebase
+  // El sistema anterior guardaba contraseñas en texto plano: se borran.
+  if (currentUser.rol === 'admin') stripLegacyPasswords()
   if (DB.get('session_user')) { DB.set('session_user', null) }
-  let sessionId = null
-  try { sessionId = sessionStorage.getItem('icrm_session') } catch {}
-  if (sessionId) currentUser = getUsers().find(u=>u.id===sessionId) || null
-  if (!currentUser) { renderLogin(); return }
+  try { sessionStorage.removeItem('icrm_session') } catch {}
 
   const visibleCompanies = getCompanies().filter(c=>userCanSeeCompany(c.id))
   currentCompanyId = DB.get('currentCompany')
@@ -4748,7 +4952,6 @@ function _startApp() {
   applyUserPermissions()
   const firstVisible = ALL_SECTIONS.find(([k])=>userCanSee(k))
   if (firstVisible) { nav(firstVisible[0]) } else { renderPage() }
-  document.getElementById('topbar-action').textContent='+ Nueva orden'
 }
 
 document.getElementById('content').innerHTML = `
@@ -4756,8 +4959,6 @@ document.getElementById('content').innerHTML = `
     <div style="width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite"></div>
     <div style="font-size:13px;color:var(--text2)">Conectando con Firebase...</div>
   </div>`
-
-if (window._fbReady) { _startApp() } else { window._fbOnReady = _startApp }
 </script>
 </body>
 </html>
