@@ -5461,6 +5461,12 @@ const dqIn = (o, f, type, extra = '') =>
   `<input class="input${type === 'text' ? '' : ' mono'}" type="${type}" style="max-width:190px;padding:5px 8px;font-size:12px" value="${esc(o[f] ?? '')}" ${extra} onchange="dqSet('${o.id}','${f}',this.value)"/>`
 const dqBtn = (label, onclick, primary) => `<button class="btn ${primary ? 'btn-primary' : 'btn-ghost'} btn-xs" onclick="${onclick}">${label}</button>`
 
+// La ETA se pide cuando hay barco: en tránsito o aduana, o en producción si falta poco para terminar.
+const ETA_DIAS_ANTES = 15
+function etaRequired(o) {
+  if (['transito', 'aduana'].includes(o.estado)) return true
+  return o.estado === 'produccion' && !!o.fin_prod && o.fin_prod <= addDaysISO(todayISO(), ETA_DIAS_ANTES)
+}
 const DQ_CHECKS = [
   { key: 'pagos', label: 'Lo pagado supera el FOB en más de 10%',
     why: 'Puede haber gastos (impuestos, flete) cargados como pagos al proveedor. Distorsiona Pagos y el flujo de caja.',
@@ -5471,8 +5477,8 @@ const DQ_CHECKS = [
     test: o => ['pedido', 'produccion'].includes(o.estado) && !o.fin_prod,
     fix: o => dqIn(o, 'fin_prod', 'date') },
   { key: 'eta', label: 'Sin ETA',
-    why: 'Sin ETA no se ubican el flete, los tributos ni los gastos de nacionalización en el flujo de caja.',
-    test: o => ['produccion', 'transito', 'aduana'].includes(o.estado) && !o.eta,
+    why: 'Ya zarpó o termina de producirse en menos de 15 días: sin ETA no se ubican el flete, los tributos ni los gastos de nacionalización en el flujo de caja.',
+    test: o => etaRequired(o) && !o.eta,
     fix: o => dqIn(o, 'eta', 'date') },
   { key: 'fin_prod_pasada', label: 'La producción ya debería haber terminado',
     why: 'La fecha de fin de producción ya pasó y la orden sigue en Producción.',
@@ -5668,7 +5674,7 @@ function renderHome() {
     </button>`
   }).join('')
 
-  const sinEta = orders.filter(o => ['produccion', 'transito', 'aduana'].includes(o.estado) && !o.eta)
+  const sinEta = orders.filter(o => etaRequired(o) && !o.eta)
   const later = cf.total - cf.vencido - cf.in30
   const cashRow = (label, val, color) => `<div style="margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#344054;font-weight:500">${label}</span><b>${usd(val)}</b></div>
@@ -5750,7 +5756,7 @@ function ordersBase() {
 function orderRowHtml(o) {
   const fob = Number(o.fob_total) || 0, pag = totalPagos(o), pct = fob ? Math.round(pag / fob * 100) : null
   const late = o.eta && o.eta < todayISO() && ['transito', 'aduana'].includes(o.estado)
-  const needsEta = ['produccion', 'transito', 'aduana'].includes(o.estado)
+  const needsEta = etaRequired(o)
   const eta = o.eta ? (late ? `<span class="pill ${o.estado === 'transito' ? 'red' : 'amber'}">${shortDate(o.eta)} · hace ${daysAgo(o.eta)} d</span>` : `<span style="font-size:13px;color:#344054">${shortDate(o.eta)}</span>`)
     : needsEta ? '<span class="pill amber">Sin ETA</span>' : '<span class="muted">—</span>'
   const dc = docsCount(o)
@@ -5852,7 +5858,7 @@ function renderOrderPage() {
   const callout = iss.length ? `<div class="callout ${red ? 'red' : 'amber'}" role="status" style="margin-bottom:18px">${IC.alert}<div><b>${iss.length === 1 ? 'Falta resolver 1 cosa' : `Faltan resolver ${iss.length} cosas`}:</b> ${iss.map(i => i.label).join(' · ')}.</div></div>` : ''
 
   const fact = (label, value, warn) => `<div><dt>${label}</dt><dd style="${warn ? 'color:var(--amber-t)' : ''}">${value}</dd></div>`
-  const needsEta = ['produccion', 'transito', 'aduana'].includes(o.estado)
+  const needsEta = etaRequired(o)
   const cbm = (o.contenedores || []).reduce((s, c) => s + (Number(c.cbm) || 0), 0) || Number(o.cbm_est) || 0
   const facts = [
     fact('FOB', fob ? usd(fob, true) : dqIn(o, 'fob_total', 'number', 'min="0" step="0.01" aria-label="FOB"'), !fob),
