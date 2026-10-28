@@ -1530,7 +1530,7 @@ function renderPagos(compact) {
   const pend = activas.map(o=>{
     const fob=Number(o.fob_total)||0
     const pagado=totalPagos(o)
-    const saldo=Math.max(0, fob-pagado)
+    const saldo=toCents(fob-pagado)
     return { o, fob, pagado, saldo }
   }).filter(x=>x.saldo>0)
   pend.sort((a,b)=>{ const fa=a.o.fin_prod||'9999-99', fb=b.o.fin_prod||'9999-99'; return fa<fb?-1:fa>fb?1:0 })
@@ -5011,6 +5011,8 @@ function todayISO() { return new Date().toISOString().slice(0, 10) }
 function addDaysISO(d, n) { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10) }
 function daysBetween(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) }
 function quoteOf(o) { return o.quoteId ? getQuotes().find(q => q.id === o.quoteId) : null }
+// Monto pendiente redondeado a centavos; nunca negativo.
+function toCents(n) { return Math.max(0, Math.round((Number(n) || 0) * 100) / 100) }
 // "Para mí" (sin fee): guardado desde esta versión; en presupuestos viejos se deduce de que no tengan fee.
 function quoteParaMi(q) {
   if (typeof q._paraMi === 'boolean') return q._paraMi
@@ -5219,10 +5221,11 @@ function cashflowItems() {
       const t = computeLanded(fob, fleteEst, cfg, 'A', true)
       trib = t.total_trib; loc = t.total_locales; basado = 'tasas generales'
     }
-    const saldo = Math.max(0, fob - totalPagos(o))
-    const fletePend = Math.max(0, fleteEst - totalCostosCat(o, 'naviera'))
-    const tribPend = Math.max(0, trib - totalCostosCat(o, 'impuesto'))
-    const locPend = Math.max(0, loc - totalCostosCat(o, 'otros'))
+    // Pendientes redondeados a centavos: un resto menor a un centavo cuenta como pagado.
+    const saldo = toCents(fob - totalPagos(o))
+    const fletePend = toCents(fleteEst - totalCostosCat(o, 'naviera'))
+    const tribPend = toCents(trib - totalCostosCat(o, 'impuesto'))
+    const locPend = toCents(loc - totalCostosCat(o, 'otros'))
     // Sin ETA: se estima con la salida (ETD + 35 días) o con el fin de producción (+ 45 días).
     const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : o.fin_prod ? addDaysISO(o.fin_prod, 45) : null)
     const base = { orderId: o.id, code: o.code, proveedor: o.proveedor || '', basado }
