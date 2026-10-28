@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ImportCRM v3</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
 
 :root {
   --bg:#F4F3EE; --surface:#FFFFFF; --surface2:#EEEDE6; --surface3:#E5E4DB;
@@ -287,6 +287,139 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
 .gap4{gap:4px}
 .gap8{gap:8px}
 .gap12{gap:12px}
+
+/* ════════════════════════════════════
+   REDISEÑO — capa visual sobre los estilos anteriores
+   Fondo gris claro, Inter con números tabulares, un solo azul de acento,
+   estados con color + texto, controles de 40–44 px.
+════════════════════════════════════ */
+:root{
+  --bg:#F4F5F7; --surface:#FFFFFF; --surface2:#F9FAFB; --surface3:#EEF0F3;
+  --border:#E3E5EA; --border2:#D0D5DD;
+  --text:#101828; --text2:#475467; --text3:#5D6679; --ink:#101828;
+  --blue:#1F4FD1; --blue-bg:#E8EEFC; --blue-t:#1F4FD1;
+  --green:#067647; --green-bg:#ECFDF3; --green-t:#067647;
+  --amber:#B54708; --amber-bg:#FEF3E2; --amber-t:#9A4A07;
+  --red:#B42318; --red-bg:#FEF0EE; --red-t:#B42318;
+  --teal:#0E7490; --teal-bg:#EEFAFC; --teal-t:#0E7490;
+  --r:8px; --rl:12px;
+  --shadow:none; --shadow-lg:0 12px 32px rgba(16,24,40,.14);
+  --font:'Inter',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+  --sidebar:248px;
+}
+body{font-family:var(--font);font-size:14px;font-variant-numeric:tabular-nums;color:var(--text);background:var(--bg)}
+.money{font-family:var(--font);font-variant-numeric:tabular-nums}
+
+/* Menú lateral */
+.sidebar{padding:18px 14px;gap:2px}
+.sidebar-logo{display:flex;align-items:center;gap:10px;padding:2px 8px 16px;border-bottom:0}
+.logo-icon{width:30px;height:30px;border-radius:8px;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-mark{font-family:var(--font);font-size:16px;font-weight:700;letter-spacing:-.2px}
+.company-selector{padding:0 0 14px;border-bottom:0}
+.company-btn{min-height:44px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);font:inherit;font-size:13px;color:var(--text);text-align:left;padding:8px 10px}
+.company-name{font-family:var(--font);font-size:13px;font-weight:600}
+.company-chevron{color:var(--text3);flex-shrink:0}
+.sidebar-section{padding:18px 12px 6px;font-size:12px;font-weight:600;color:var(--text3);text-transform:none;letter-spacing:0}
+.nav-item{width:100%;min-height:42px;border:0;border-left:0;background:transparent;font:inherit;font-size:14px;font-weight:500;color:#344054;text-align:left;padding:0 12px;border-radius:8px;gap:10px}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-item span:first-of-type{flex:1}
+.nav-item:hover{background:var(--surface3);color:var(--text)}
+.nav-item.active{background:var(--blue-bg);color:var(--blue);font-weight:600}
+.nav-item:focus-visible,.btn:focus-visible,.chip:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.nav-count{font-size:11px;font-weight:700;color:var(--amber-t);background:var(--amber-bg);border-radius:10px;padding:2px 8px}
+#user-info-box{border-top:1px solid var(--border)!important;padding:12px 8px 0!important;margin-top:auto}
+
+/* Barra superior y contenido */
+.topbar{padding:14px 32px;border-bottom:1px solid var(--border)}
+.page-title{font-size:18px;font-weight:700}
+.content{padding:28px 32px 56px}
+.search{height:40px;border-radius:10px;background:var(--surface);width:260px}
+
+/* Botones, campos y etiquetas */
+.btn{min-height:40px;padding:0 14px;font-size:13px;border-radius:8px;border-color:var(--border2);font-family:var(--font)}
+.btn-sm{min-height:36px;padding:0 12px;font-size:13px}
+.btn-xs{min-height:30px;padding:0 9px;font-size:12px}
+.btn-primary{background:var(--blue);border-color:var(--blue)}
+.btn-primary:hover{background:#163BA3}
+.btn-danger{background:var(--red-bg);color:var(--red-t);border-color:#F7C1BB}
+.input,.select,.textarea{min-height:40px;padding:8px 12px;font-size:14px;border-radius:8px;border-color:var(--border2)}
+.input:focus,.select:focus,.textarea:focus{box-shadow:0 0 0 3px rgba(31,79,209,.15)}
+.label{font-size:13px;font-weight:500;color:#344054;text-transform:none;letter-spacing:0;margin-bottom:5px}
+.form-hint{font-size:12px}
+
+/* Tarjetas, estados y filtros */
+.card{border-radius:12px;border-color:var(--border);box-shadow:none;padding:18px 20px}
+.section-title{font-size:16px;font-weight:700}
+.badge{font-family:var(--font);text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;border-radius:13px;padding:3px 10px;gap:6px}
+.badge-dot{width:7px;height:7px}
+.b-pedido{background:#F2F5FF;color:#1F4FD1}.dot-pedido{background:#1F4FD1}
+.b-produccion{background:#F4F3FF;color:#5925DC}.dot-produccion{background:#7A5AF8}
+.b-transito{background:var(--teal-bg);color:var(--teal-t)}.dot-transito{background:var(--teal)}
+.b-aduana{background:#FFF7EB;color:#9A4A07}.dot-aduana{background:#B54708}
+.b-entregado{background:var(--green-bg);color:var(--green-t)}.dot-entregado{background:var(--green)}
+.chip{min-height:38px;display:inline-flex;align-items:center;gap:6px;padding:0 14px;border-radius:20px;font-family:var(--font);text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:#344054;border-color:var(--border2)}
+.chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip .chip-n{font-size:12px;color:var(--text3)}
+.chip.active .chip-n{color:#D0D5DD}
+.tab{font-size:14px;padding:10px 14px;font-family:var(--font);text-transform:none;letter-spacing:0;font-weight:500;min-height:44px}
+.tab.active{font-weight:600}
+.modal{border-radius:14px}
+.tag{font-family:var(--font);text-transform:none;font-size:12px;border-radius:12px}
+
+/* Piezas nuevas */
+.pg-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.pg-head h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.4px}
+.pg-head p{margin:4px 0 0;font-size:14px;color:var(--text2)}
+.pg-head .grow{flex:1 1 260px}
+.box{background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.box-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:18px 20px 12px}
+.box-h h2{margin:0;font-size:17px;font-weight:700}
+.box-h .sub{font-size:13px;color:var(--text2)}
+.metric{display:block;text-align:left;width:100%;font:inherit;color:inherit;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;transition:border-color .15s,box-shadow .15s}
+.metric:hover{border-color:var(--border2);box-shadow:0 4px 12px rgba(16,24,40,.08)}
+.metric .m-l{font-size:13px;font-weight:500;color:var(--text2)}
+.metric .m-v{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-top:6px;white-space:nowrap}
+.metric .m-s{font-size:13px;color:var(--text2);margin-top:4px}
+.grid-auto{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:13px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill.red{background:var(--red-bg);color:var(--red-t)}.pill.amber{background:var(--amber-bg);color:var(--amber-t)}
+.pill.green{background:var(--green-bg);color:var(--green-t)}.pill.blue{background:var(--blue-bg);color:var(--blue-t)}
+.pill.gray{background:var(--surface3);color:var(--text2)}
+.seg{display:inline-flex;padding:3px;background:#E9EBEF;border-radius:10px}
+.seg button{height:38px;padding:0 14px;border:0;border-radius:8px;background:transparent;font:inherit;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{background:var(--surface2);font-size:12px;font-weight:600;color:var(--text2);padding:11px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl td{padding:12px;border-bottom:1px solid #EEF0F3;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl th:first-child,.tbl td:first-child{padding-left:20px}
+.tbl th:last-child,.tbl td:last-child{padding-right:20px}
+.tbl .r{text-align:right}
+.tbl tbody tr{cursor:pointer}
+.tbl tbody tr:hover td{background:var(--surface2)}
+.code{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)}
+.muted{color:var(--text2);font-size:13px}
+.inbox-row{display:flex;align-items:center;gap:14px;padding:14px 20px;border-top:1px solid #EEF0F3;flex-wrap:wrap}
+.inbox-ic{flex:0 0 36px;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.inbox-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.inbox-ic.red{background:var(--red-bg);color:var(--red-t)}.inbox-ic.amber{background:var(--amber-bg);color:var(--amber-t)}.inbox-ic.blue{background:var(--blue-bg);color:var(--blue-t)}
+.stage-card{display:block;text-align:left;font:inherit;color:inherit;cursor:pointer;border-radius:10px;padding:12px 14px;border:1px solid var(--border)}
+.dots{display:flex;gap:3px;margin-bottom:5px}.dots span{width:18px;height:6px;border-radius:3px;background:var(--border)}
+.bar{height:8px;background:var(--surface3);border-radius:4px;overflow:hidden}.bar>div{height:100%;border-radius:4px}
+.callout{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:12px;font-size:14px;line-height:1.5}
+.callout.amber{background:#FFFBF2;border:1px solid #F5D9A8;color:#4A2504}
+.callout.red{background:#FFF6F5;border:1px solid #F7C1BB;color:#55160C}
+.callout svg{flex:0 0 20px;margin-top:1px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.steps{list-style:none;margin:0;padding:16px 20px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.steps li{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:13px}
+.steps .sb{height:6px;border-radius:3px;background:var(--border)}
+.facts{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px 20px}
+.facts dt{font-size:12px;font-weight:500;color:var(--text3)}
+.facts dd{margin:4px 0 0;font-size:15px;font-weight:600}
+.two-col{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:18px;align-items:start}
+@media (max-width:1100px){.two-col{grid-template-columns:minmax(0,1fr)}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -295,40 +428,34 @@ tbody tr:hover td{background:var(--surface2);cursor:pointer}
   <!-- SIDEBAR -->
   <nav class="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-mark">Import<span style="color:var(--blue)">CRM</span></div>
-      <div class="logo-sub">v3 · 2025</div>
+      <span class="logo-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15h18l-2.5 5h-13z"/><path d="M6 15V9h12v6"/><path d="M12 9V4"/></svg></span>
+      <span class="logo-mark">ImportCRM</span>
     </div>
 
-    <!-- Company selector -->
+    <!-- Selector de empresa -->
     <div class="company-selector" style="position:relative">
-      <div class="company-btn" onclick="toggleCompanyDD()">
-        <div class="company-dot" id="co-dot"></div>
+      <button type="button" class="company-btn" onclick="toggleCompanyDD()" aria-haspopup="listbox">
+        <span class="company-dot" id="co-dot"></span>
         <span class="company-name" id="co-name">Cargando...</span>
-        <span class="company-chevron">▾</span>
-      </div>
+        <svg class="company-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+      </button>
       <div class="company-dropdown" id="co-dd" style="display:none"></div>
     </div>
 
-    <div class="sidebar-section">Operaciones</div>
-    <div class="nav-item active" onclick="nav('dashboard')">📊 Dashboard</div>
-    <div class="nav-item" onclick="nav('dataquality')">🧹 Datos a completar <span id="dq-badge" style="margin-left:auto;font-size:10px;font-weight:700;font-family:var(--mono);background:var(--amber-bg);color:var(--amber-t);border-radius:9px;padding:1px 7px;display:none"></span></div>
-    <div class="nav-item" onclick="nav('calendar')">📅 Calendario</div>
-    <div class="nav-item" onclick="nav('pagos')">💳 Pagos</div>
-    <div class="nav-item" onclick="nav('cashflow')">📈 Flujo de caja</div>
-    <div class="nav-item" onclick="nav('orders')">📦 Órdenes</div>
-    <div class="nav-item" onclick="nav('tracking')">🚢 Tracking</div>
-    <div class="nav-item" onclick="nav('costs')">💰 Costos</div>
-    <div class="nav-item" onclick="nav('calc')">🧮 Calculadora</div>
+    <button type="button" class="nav-item active" onclick="nav('dashboard')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span>Inicio</span><span id="dq-badge" class="nav-count" style="display:none"></span></button>
+    <button type="button" class="nav-item" onclick="nav('orders')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg><span>Órdenes</span></button>
+    <button type="button" class="nav-item" onclick="nav('cashflow')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M16 15h2"/></svg><span>Pagos y caja</span></button>
+    <button type="button" class="nav-item" onclick="nav('calc')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8"/><path d="M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg><span>Calculadora</span></button>
 
     <div class="sidebar-section">Comercial</div>
-    <div class="nav-item" onclick="nav('clients')">👥 Clientes</div>
-    <div class="nav-item" onclick="nav('quotes')">📋 Presupuestos</div>
-    <div class="nav-item" onclick="nav('analysis')">🎯 Estimado vs. real</div>
+    <button type="button" class="nav-item" onclick="nav('quotes')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h6"/></svg><span>Presupuestos</span></button>
+    <button type="button" class="nav-item" onclick="nav('clients')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.7c1.9.8 3.1 2.6 3.5 5.3"/></svg><span>Clientes</span></button>
 
-    <div class="sidebar-section">Config</div>
-    <div class="nav-item" onclick="nav('suppliers')">🏭 Proveedores</div>
-    <div class="nav-item" onclick="nav('products')">🏷️ Productos</div>
-    <div class="nav-item" onclick="nav('companies')">🏢 Empresas</div>
+    <div class="sidebar-section">Catálogo y análisis</div>
+    <button type="button" class="nav-item" onclick="nav('suppliers')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V10l6 4V10l6 4V6l6 3v12z"/></svg><span>Proveedores</span></button>
+    <button type="button" class="nav-item" onclick="nav('products')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg><span>Productos y NCM</span></button>
+    <button type="button" class="nav-item" onclick="nav('analysis')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Estimado vs. real</span></button>
+    <button type="button" class="nav-item" onclick="nav('companies')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21V5l8-2v18"/><path d="M12 9h8v12"/><path d="M8 8h.01M8 12h.01M8 16h.01M16 13h.01M16 17h.01"/></svg><span>Empresas</span></button>
   </nav>
 
   <div class="main">
@@ -1069,21 +1196,28 @@ document.addEventListener('click', e => {
 /* ════════════════════════════════════
    NAVIGATION
 ════════════════════════════════════ */
-const PAGE_TITLES = { dataquality:'Datos a completar', cashflow:'Flujo de caja', analysis:'Estimado vs. real', products:'Catálogo de productos', dashboard:'Dashboard', calendar:'Calendario', pagos:'Pagos pendientes', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
+const PAGE_TITLES = { order:'Orden', dataquality:'Datos a completar',cashflow:'Flujo de caja', analysis:'Estimado vs. real', products:'Catálogo de productos', dashboard:'Dashboard', calendar:'Calendario', pagos:'Pagos pendientes', orders:'Órdenes', tracking:'Tracking naval', costs:'Costos y gastos', calc:'Calculadora de Landed Cost', clients:'Clientes', quotes:'Presupuestos', suppliers:'Proveedores', companies:'Empresas', users:'Usuarios' }
 const PAGE_ACTIONS = { products:'+ Producto', dashboard:null, calendar:'+ Nueva alerta', folders:'+ Nueva carpeta', orders:'+ Nueva orden', tracking:null, costs:null, calc:null, clients:'+ Nuevo cliente', quotes:'+ Nuevo presupuesto', suppliers:'+ Proveedor', companies:'+ Empresa' }
 const PAGE_ACTION_FNS = { products:()=>openProductModal(), calendar:()=>openAlertModal(), folders:()=>openModal('modal-folder'), orders:openNewOrder, clients:openNewClient, quotes:()=>nav('calc'), suppliers:openNewSupplier, companies:()=>openModal('modal-company') }
 
+// Pantallas que no están en el menú: qué permiso usan y qué ítem del menú marcan.
+const PAGE_SECTION = { order: 'orders' }
+const PAGE_MENU = { order: 'orders', pagos: 'cashflow', dataquality: 'dashboard', calendar: 'dashboard', tracking: 'orders', costs: 'orders', folders: 'orders' }
+// Pantallas rediseñadas: tienen su propio encabezado, sin la barra superior vieja.
+const REDESIGNED = ['dashboard', 'orders', 'order', 'cashflow', 'calc']
+
 function nav(page) {
   // Permission guard
-  if (page !== 'users' && typeof currentUser !== 'undefined' && currentUser && !userCanSee(page)) {
+  if (page !== 'users' && typeof currentUser !== 'undefined' && currentUser && !userCanSee(PAGE_SECTION[page] || page)) {
     const firstVisible = ALL_SECTIONS.find(([k])=>userCanSee(k))
     page = firstVisible ? firstVisible[0] : page
   }
   if (page === 'users' && currentUser?.rol !== 'admin') return
   currentPage = page
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'))
-  const items = document.querySelectorAll('.nav-item')
-  items.forEach(el => { if ((el.getAttribute('onclick')||'').includes("nav('" + page + "')")) el.classList.add('active') })
+  const menuKey = PAGE_MENU[page] || page
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', (el.getAttribute('onclick')||'').includes("nav('" + menuKey + "')")))
+  document.querySelector('.topbar').style.display = REDESIGNED.includes(page) ? 'none' : ''
+  const contentEl = document.getElementById('content'); if (contentEl) contentEl.scrollTop = 0
   document.getElementById('page-title').textContent = PAGE_TITLES[page] || page
   const btn = document.getElementById('topbar-action')
   if(PAGE_ACTIONS[page]) { btn.textContent = PAGE_ACTIONS[page]; btn.style.display=''; }
@@ -1099,7 +1233,7 @@ function handleSearch(q) {
 
 function renderPage() {
   const el = document.getElementById('content')
-  const pages = { dataquality:renderDataQuality, cashflow:renderCashflow, analysis:renderAnalysis, products:renderProducts, dashboard:renderDashboard, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersPage, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
+  const pages = { order:renderOrderPage, dataquality:renderDataQuality, cashflow:renderCaja, analysis:renderAnalysis, products:renderProducts, dashboard:renderHome, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersV2, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
   if(pages[currentPage]) el.innerHTML = pages[currentPage]()
   if(currentPage === 'calc') setTimeout(initCalcPage, 0)
   updateDataQualityBadge()
@@ -1390,7 +1524,7 @@ function saveFolder() {
 ═════════════════════════════════════ */
 const PAGO_METODOS = ['Cuenta exterior','Cuenta Chile','Tarjeta de crédito','Transferencia','Western Union','Efectivo']
 
-function renderPagos() {
+function renderPagos(compact) {
   const activas = ordersByCompany().filter(o=>o.estado!=='entregado')
   const pend = activas.map(o=>{
     const fob=Number(o.fob_total)||0
@@ -1414,7 +1548,7 @@ function renderPagos() {
 
   const now=new Date()
   return `
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+  <div style="display:${compact?'none':'grid'};grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
     <div class="card"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">Falta abonar</div><div style="font-size:22px;font-weight:800;color:var(--amber-t)">${fmtUSD(totalPend)}</div><div style="font-size:11px;color:var(--text3);margin-top:2px">${pend.length} orden${pend.length!==1?'es':''} activa${pend.length!==1?'s':''}</div></div>
     <div class="card"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">Ya pagado</div><div style="font-size:22px;font-weight:800;color:var(--green-t)">${fmtUSD(totalPagado)}</div></div>
     <div class="card"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:var(--mono);margin-bottom:4px">FOB total</div><div style="font-size:22px;font-weight:800">${fmtUSD(totalFob)}</div></div>
@@ -1523,29 +1657,7 @@ function filterOrders(el, estado) {
 /* ════════════════════════════════════
    ORDER DETAIL MODAL
 ════════════════════════════════════ */
-function openDetail(id) {
-  detailOrderId = id
-  const orders = getOrders()
-  const o = orders.find(x=>x.id===id)
-  if(!o) return
-  document.getElementById('det-title').textContent = `${o.code} — ${o.categoria||'Importación'}`
-  document.getElementById('det-meta').innerHTML = `
-    ${badge(o.estado)}
-    <span style="font-size:12px;color:var(--text2)">Proveedor: <strong>${o.proveedor||'—'}</strong></span>
-    ${o.puerto?`<span style="font-size:12px;color:var(--text2)">· ${o.puerto}</span>`:''}
-    ${o.incoterm?`<span class="tag">${o.incoterm}</span>`:''}
-  `
-  renderDetailTabs(o,'general')
-  openModal('modal-detail')
-}
-
-function renderDetailTabs(o, active='general') {
-  const TABS = [['general','General'],['productos','Productos'],['pagos','Pagos'],['contenedores','Contenedores'],['costos','Costos'],['documentos','Documentos'],['archivos','Archivos'],['timeline','Timeline']]
-  document.getElementById('det-tabs').innerHTML = TABS.map(([k,l])=>
-    `<button class="tab${active===k?' active':''}" onclick="renderDetailTabs(getOrders().find(x=>x.id==='${o.id}'),'${k}')">${l}</button>`
-  ).join('')
-  document.getElementById('det-body').innerHTML = detTabContent(o, active)
-}
+// openDetail y renderDetailTabs ahora abren la página de la orden (ver "Detalle de orden (página)").
 
 function detTabContent(o, tab) {
   if(tab==='general') return detGeneral(o)
@@ -2370,7 +2482,7 @@ function saveRealValues(orderId) {
 
   document.getElementById('modal-real-values').classList.remove('open')
   toast(`Valores reales guardados ✓ — Landed: ${fmtUSD(landedTotal)}`)
-  if (document.getElementById('modal-detail')?.classList.contains('open')) openDetail(orderId)
+  if (currentPage === 'order') renderPage()
   setTimeout(() => openOrderSummaryModal(orderId), 500)
 }
 
@@ -2578,7 +2690,7 @@ function deleteOrder() {
   saveOrders(getOrders().filter(o=>o.id!==detailOrderId))
   closeModal('modal-detail')
   toast('Orden eliminada')
-  renderPage()
+  if (currentPage === 'order') nav('orders'); else renderPage()
 }
 
 /* ════════════════════════════════════
@@ -3477,19 +3589,17 @@ function renderCalc() {
   calcProdCount = calcProds.length
 
   return `
-<div style="display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start">
+<div class="pg-head">
+  <div class="grow"><h1>Calculadora de costo</h1><p>Cada producto con su NCM. Con volumen en todos, el flete se reparte por volumen.</p></div>
+  <button type="button" class="btn" onclick="resetCalc2()">Limpiar</button>
+  <button type="button" class="btn btn-primary" onclick="openSaveAsQuote()">Guardar como presupuesto</button>
+</div>
+<div class="two-col">
 
-<!-- LEFT -->
-<div>
+<!-- IZQUIERDA: datos -->
+<div style="min-width:0">
   <!-- HEADER -->
   <div class="card mb12">
-    <div class="flex-between mb12">
-      <div class="section-title">🧮 Calculadora de Landed Cost</div>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="resetCalc2()">Limpiar</button>
-        <button class="btn btn-primary btn-sm" onclick="openSaveAsQuote()">📋 Guardar como presupuesto</button>
-      </div>
-    </div>
     <!-- MODO TOGGLE -->
     <div style="display:flex;gap:0;background:var(--surface2);border-radius:var(--r);padding:3px;margin-bottom:12px;width:fit-content">
       <button id="btn-para-cliente" class="btn btn-primary btn-sm" style="border-radius:5px" onclick="setCalcMode('cliente')">Para cliente</button>
@@ -3558,49 +3668,15 @@ function renderCalc() {
     </div>
   </div>
 
-  <!-- DESGLOSE COSTOS TOTALES -->
-  <div class="card mb12" id="calc-breakdown" style="display:none">
-    <div class="section-title mb10">Desglose de costos (operación completa)</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div class="card-flat" style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">FOB Total</div>
-        <div class="money text-blue" style="font-size:16px" id="cb_fob">—</div>
-      </div>
-      <div class="card-flat" style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Landed Total</div>
-        <div class="money text-red" style="font-size:16px" id="cb_landed">—</div>
-      </div>
-      <div class="card-flat" style="text-align:center">
-        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Total venta cliente</div>
-        <div class="money text-green" style="font-size:16px" id="cb_venta">—</div>
-      </div>
-      <div class="card-flat" style="text-align:center;background:var(--blue-bg)">
-        <div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Múltiplo promedio</div>
-        <div class="money text-blue" style="font-size:16px" id="cb_multi">—</div>
-      </div>
-    </div>
-    <div id="cb_rows"></div>
-    <div style="height:10px;border-radius:5px;overflow:hidden;display:flex;gap:1px;margin-top:10px" id="cb_bar"></div>
-    <div style="display:flex;gap:10px;margin-top:5px;flex-wrap:wrap" id="cb_legend"></div>
-  </div>
-
-  <!-- PRESUPUESTOS GUARDADOS -->
-  <div class="card">
-    <div class="flex-between mb10">
-      <div class="section-title">Presupuestos guardados</div>
-      <button class="btn btn-ghost btn-sm" onclick="nav('quotes')">Ver todos →</button>
-    </div>
-    <div id="calc-saves-list2"></div>
-  </div>
-</div>
-
-<!-- RIGHT: config tasas -->
-<div>
-  <div class="card mb12">
-    <div class="flex-between mb10">
-      <div class="section-title">⚙️ Tasas y gastos</div>
-      <button class="btn btn-ghost btn-sm" onclick="resetCalcConfig()">Restablecer</button>
-    </div>
+  
+  <details class="box" style="margin-bottom:12px">
+    <summary style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:16px 20px;cursor:pointer">
+      <span style="font-size:15px;font-weight:700">Tasas y gastos generales</span>
+      <span class="muted" style="flex:1">Derecho ${cfg.di_pct}% · IVA ${cfg.iva_pct}% · Tasa est. ${cfg.te_pct}% · Despachante USD ${cfg.despachante} · Terminal USD ${cfg.thc_bl}</span>
+      <span style="color:var(--blue);font-weight:600;font-size:13px">Ver y editar</span>
+    </summary>
+    <div style="padding:0 20px 18px">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button type="button" class="btn btn-ghost btn-sm" onclick="resetCalcConfig()">Restablecer valores</button></div>
 
     <div style="font-size:10px;font-weight:700;color:var(--red-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Tributos aduaneros</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px">
@@ -3665,8 +3741,53 @@ function renderCalc() {
       <div class="form-group"><label class="label" style="font-size:10px">Módulo B — % FOB</label><div style="display:flex;align-items:center;gap:3px"><input class="input" type="number" id="cfg_fee_pct_b" min="0" step="0.1" value="${cfg.fee_pct_b}" oninput="updateConfig('fee_pct_b',this.value);recalcAll()" style="font-family:var(--mono);font-size:12px"/><span style="font-size:11px;color:var(--text3)">%</span></div></div>
       <div class="form-group"><label class="label" style="font-size:10px">IVA sobre fee %</label><div style="display:flex;align-items:center;gap:3px"><input class="input" type="number" id="cfg_iva_fee" min="0" step="0.1" value="${cfg.iva_fee_pct}" oninput="updateConfig('iva_fee_pct',this.value);recalcAll()" style="font-family:var(--mono);font-size:12px"/><span style="font-size:11px;color:var(--text3)">%</span></div></div>
     </div>
+    </div>
+  </details>
+
+  <!-- PRESUPUESTOS GUARDADOS -->
+  <div class="card">
+    <div class="flex-between mb10">
+      <div class="section-title">Presupuestos guardados</div>
+      <button class="btn btn-ghost btn-sm" onclick="nav('quotes')">Ver todos →</button>
+    </div>
+    <div id="calc-saves-list2"></div>
   </div>
+
 </div>
+
+<!-- DERECHA: resultado, fijo al hacer scroll -->
+<div style="position:sticky;top:0;min-width:0">
+  <div class="box" id="calc-empty" style="padding:20px">
+    <h2 style="margin:0 0 6px;font-size:17px;font-weight:700">Resultado</h2>
+    <p class="muted" style="margin:0">Cargá al menos un producto con cantidad y FOB para ver cuánta plata necesitás y el costo real.</p>
+  </div>
+  <!-- DESGLOSE COSTOS TOTALES -->
+  <div class="card mb12" id="calc-breakdown" style="display:none">
+    <div class="section-title mb10">Resultado</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="card-flat" style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">FOB Total</div>
+        <div class="money text-blue" style="font-size:16px" id="cb_fob">—</div>
+      </div>
+      <div class="card-flat" style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Landed Total</div>
+        <div class="money text-red" style="font-size:16px" id="cb_landed">—</div>
+      </div>
+      <div class="card-flat" style="text-align:center">
+        <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Total venta cliente</div>
+        <div class="money text-green" style="font-size:16px" id="cb_venta">—</div>
+      </div>
+      <div class="card-flat" style="text-align:center;background:var(--blue-bg)">
+        <div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">Múltiplo promedio</div>
+        <div class="money text-blue" style="font-size:16px" id="cb_multi">—</div>
+      </div>
+    </div>
+    <div id="cb_rows"></div>
+    <div style="height:10px;border-radius:5px;overflow:hidden;display:flex;gap:1px;margin-top:10px" id="cb_bar"></div>
+    <div style="display:flex;gap:10px;margin-top:5px;flex-wrap:wrap" id="cb_legend"></div>
+  </div>
+
+  </div>
 </div>
 
 <!-- MODAL: GUARDAR COMO PRESUPUESTO -->
@@ -3805,7 +3926,7 @@ function resetCalc2() {
   DB.set('calc_prods_draft', [])
   const rows = document.getElementById('calc-prod-rows')
   if (rows) rows.innerHTML = ''
-  document.getElementById('calc-breakdown').style.display = 'none'
+  document.getElementById('calc-breakdown').style.display = 'none'; const ce0 = document.getElementById('calc-empty'); if (ce0) ce0.style.display = ''
   document.getElementById('calc-prod-totals').style.display = 'none'
   const flete = document.getElementById('c2_flete'); if (flete) flete.value = ''
   const desc = document.getElementById('c2_descuento'); if (desc) desc.value = ''
@@ -3841,7 +3962,7 @@ function recalcAll() {
 
   const validProds = calcProds.filter(p => (p.qty > 0) && (p.fob > 0))
   if (!validProds.length) {
-    document.getElementById('calc-breakdown').style.display = 'none'
+    document.getElementById('calc-breakdown').style.display = 'none'; const ce1 = document.getElementById('calc-empty'); if (ce1) ce1.style.display = ''
     document.getElementById('calc-prod-totals').style.display = 'none'
     return
   }
@@ -3870,7 +3991,7 @@ function recalcAll() {
   document.getElementById('ct_venta').textContent = fmtUSD(totalVenta)
 
   // Breakdown card
-  document.getElementById('calc-breakdown').style.display = 'block'
+  document.getElementById('calc-breakdown').style.display = 'block'; const ce2 = document.getElementById('calc-empty'); if (ce2) ce2.style.display = 'none'
   document.getElementById('cb_fob').textContent = fmtUSD(fobTotal)
   document.getElementById('cb_landed').textContent = fmtUSD(totals.landed)
   document.getElementById('cb_venta').textContent = fmtUSD(totalVenta)
@@ -5119,7 +5240,7 @@ function cashflowSummary() {
   const venc = items.filter(i => i.fecha && weekStartISO(i.fecha) < thisWeek)
   const next = items.filter(i => i.fecha && weekStartISO(i.fecha) >= thisWeek && i.fecha <= lim30)
   const sum = a => a.reduce((s, x) => s + x.monto, 0)
-  return { in30: sum(next), n30: next.length, vencido: sum(venc), nVencido: venc.length }
+  return { in30: sum(next), n30: next.length, vencido: sum(venc), nVencido: venc.length, total: sum(items), nTotal: items.length }
 }
 
 function weekStartISO(d) { const x = new Date(d + 'T12:00:00'); const dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow); return x.toISOString().slice(0, 10) }
@@ -5392,6 +5513,450 @@ function dqOpen(orderId, tab) {
 }
 
 /* ════════════════════════════════════
+   REDISEÑO — Inicio, Órdenes, Detalle de orden, Pagos y caja
+════════════════════════════════════ */
+const IC = {
+  alert: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  info: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+  check: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>',
+  plus: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  search: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--text3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  ship: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--teal)"><path d="M3 15h18l-2.5 5h-13z"/><path d="M6 15V9h12v6"/><path d="M12 9V4"/></svg>',
+}
+const STAGE5 = ['pedido', 'produccion', 'transito', 'aduana', 'entregado']
+const STAGE_COLOR = { muestra: '#98A2B3', cotizacion: '#98A2B3', pedido: '#1F4FD1', produccion: '#7A5AF8', transito: '#0E7490', aduana: '#B54708', entregado: '#067647' }
+function usd(n, dec) { return 'USD ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec ? 2 : 0, maximumFractionDigits: dec ? 2 : 0 }) }
+function shortDate(d) { try { return new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) } catch { return d } }
+function daysAgo(d) { return d ? daysBetween(d, todayISO()) : 0 }
+function plural(n, a, b) { return n === 1 ? a : b }
+function orderIssues(o) { return DQ_CHECKS.filter(c => { try { return c.test(o) } catch { return false } }) }
+function dqGo(key) { dqFilter = key; nav('dataquality') }
+function goOrders(f) { ordersFilter = f; ordersView = 'tabla'; nav('orders') }
+function stageDots(estado) {
+  const idx = STAGE5.indexOf(estado), c = STAGE_COLOR[estado]
+  return `<div class="dots" aria-hidden="true">${STAGE5.map((s, i) => `<span style="${i <= idx ? 'background:' + c : ''}"></span>`).join('')}</div>`
+}
+function docsCount(o) {
+  const st = docsStatus(o).filter(d => d.needed && !d.optional)
+  return { need: st.length, done: st.filter(d => d.done).length }
+}
+
+/* ── Inicio ── */
+function renderHome() {
+  const orders = ordersByCompany()
+  const active = orders.filter(o => DQ_ACTIVE.includes(o.estado))
+  const cf = cashflowSummary()
+  const dq = dataQualityIssues()
+  const dqTotal = dq.reduce((s, r) => s + r.issues.length, 0)
+  const co = getCompanies().find(c => c.id === currentCompanyId)
+  const first = esc((currentUser?.nombre || '').split(' ')[0])
+  const hoy = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const withIssue = k => dq.filter(r => r.issues.some(i => i.key === k)).map(r => r.o)
+  const codes = os => esc(os.slice(0, 3).map(o => o.code).join(', ') + (os.length > 3 ? ` y ${os.length - 3} más` : ''))
+
+  const inbox = []
+  if (cf.nVencido) inbox.push({ tone: 'red', title: `${cf.nVencido} ${plural(cf.nVencido, 'pago atrasado', 'pagos atrasados')} por ${usd(cf.vencido, true)}`, desc: 'Pueden ser pagos ya hechos que no se cargaron, o fechas que se corrieron. Revisalos antes de planificar la caja.', cta: 'Revisar pagos', on: "nav('cashflow')" })
+  withIssue('pagos').slice(0, 2).forEach(o => {
+    const fob = Number(o.fob_total) || 0, pag = totalPagos(o)
+    inbox.push({ tone: 'red', title: `${esc(o.code)}: pagado ${(pag / fob).toFixed(1).replace('.', ',')} veces el FOB`, desc: `${usd(pag, true)} pagados contra ${usd(fob, true)} de FOB. ¿Hay gastos cargados como pagos al proveedor?`, cta: 'Ver la orden', on: `openDetail('${o.id}')` })
+  })
+  const aduana = orders.filter(o => o.estado === 'aduana')
+  if (aduana.length) {
+    const maxDays = Math.max(0, ...aduana.map(o => o.eta && o.eta < todayISO() ? daysAgo(o.eta) : 0))
+    const faltan = aduana.reduce((s, o) => s + docsMissing(o).length, 0)
+    inbox.push({ tone: 'amber', title: `${aduana.length} ${plural(aduana.length, 'orden', 'órdenes')} en aduana${maxDays ? ` (la más vieja, hace ${maxDays} días)` : ''}`, desc: `${codes(aduana)}.${faltan ? ` Faltan ${faltan} documentos en total para nacionalizar.` : ''}`, cta: aduana.length === 1 ? 'Abrir orden' : 'Ver en aduana', on: aduana.length === 1 ? `openDetail('${aduana[0].id}')` : "goOrders('aduana')" })
+  }
+  const etaPast = withIssue('eta_pasada')
+  if (etaPast.length) inbox.push({ tone: 'amber', title: `${etaPast.length} en tránsito con la ETA vencida`, desc: `${codes(etaPast)}. ¿Ya llegaron? Pasalas a Aduana o corregí la fecha.`, cta: 'Revisar', on: "dqGo('eta_pasada')" })
+  const noEta = withIssue('eta')
+  if (noEta.length) inbox.push({ tone: 'amber', title: `${noEta.length} ${plural(noEta.length, 'orden', 'órdenes')} sin ETA`, desc: 'Sin llegada estimada, el flete y los tributos no tienen fecha en la caja. Cargalas en la lista de abajo.', cta: 'Cargar ETAs', on: "document.getElementById('sec-noeta')?.scrollIntoView({behavior:'smooth'})" })
+  const finPast = withIssue('fin_prod_pasada')
+  if (finPast.length) inbox.push({ tone: 'amber', title: `${finPast.length} ${plural(finPast.length, 'orden debería', 'órdenes deberían')} haber terminado producción`, desc: `${codes(finPast)}. ¿Ya salieron? Pasalas a Tránsito o corregí la fecha.`, cta: 'Revisar', on: "dqGo('fin_prod_pasada')" })
+  const noFin = withIssue('fin_prod')
+  if (noFin.length) inbox.push({ tone: 'amber', title: `${noFin.length} ${plural(noFin.length, 'pedido', 'pedidos')} sin fecha de fin de producción`, desc: `${codes(noFin)}. Sin esa fecha, el saldo al proveedor no aparece en la caja.`, cta: 'Completar', on: "dqGo('fin_prod')" })
+  const reales = withIssue('reales')
+  if (reales.length) inbox.push({ tone: 'blue', title: `${reales.length} ${plural(reales.length, 'orden entregada', 'órdenes entregadas')} sin costo real`, desc: `${codes(reales)}. Cargalo para comparar con lo que habías estimado.`, cta: 'Cargar costos', on: "dqGo('reales')" })
+  const docs = withIssue('docs')
+  if (docs.length) inbox.push({ tone: 'blue', title: `${docs.length} ${plural(docs.length, 'orden', 'órdenes')} con documentos faltantes`, desc: `${codes(docs)}.`, cta: 'Ver cuáles', on: "dqGo('docs')" })
+
+  const stageCards = STAGE5.map(s => {
+    const os = orders.filter(o => o.estado === s), fob = os.reduce((t, o) => t + (Number(o.fob_total) || 0), 0)
+    const c = STAGE_COLOR[s]
+    return `<button type="button" class="stage-card" onclick="goOrders('${s}')" style="${os.length ? `background:${c}0D;border-color:${c}33` : 'background:var(--surface2);color:var(--text3)'}">
+      <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${c}"></span>${s === 'entregado' ? 'Entregadas' : S_LABELS[s]}</div>
+      <div style="font-size:24px;font-weight:700;margin-top:6px">${os.length}</div>
+      <div style="font-size:12px;color:var(--text2)">${fob ? usd(fob) : '—'}</div>
+    </button>`
+  }).join('')
+
+  const sinEta = orders.filter(o => ['produccion', 'transito', 'aduana'].includes(o.estado) && !o.eta)
+  const later = cf.total - cf.vencido - cf.in30
+  const cashRow = (label, val, color) => `<div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:#344054;font-weight:500">${label}</span><b>${usd(val)}</b></div>
+      <div class="bar"><div style="width:${cf.total ? Math.max(val > 0 ? 1.5 : 0, val / cf.total * 100) : 0}%;background:${color}"></div></div></div>`
+
+  return `
+  <div class="pg-head">
+    <div class="grow"><h1>Hola${first ? ', ' + first : ''}</h1><p style="text-transform:none">${hoy.charAt(0).toUpperCase() + hoy.slice(1)} · ${esc(co?.nombre || '')}</p></div>
+    <label for="home-search" class="sr">Buscar órdenes, proveedores o BL</label>
+    <div style="display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;background:#fff;border:1px solid var(--border2);border-radius:10px;flex:0 1 320px">
+      ${IC.search}<input id="home-search" type="search" placeholder="Buscar órdenes, proveedores o BL" style="border:0;outline:0;flex:1;min-width:0;font:inherit;font-size:14px;background:transparent" onkeydown="if(event.key==='Enter'){ordersSearch=this.value;ordersFilter='todas';ordersView='tabla';nav('orders')}"/>
+    </div>
+    <button type="button" class="btn btn-primary" style="min-height:44px" onclick="openNewOrder()">${IC.plus} Nueva orden</button>
+  </div>
+
+  <div class="grid-auto" style="margin-bottom:20px">
+    <button type="button" class="metric" onclick="nav('cashflow')"><div class="m-l">Pagos atrasados</div><div class="m-v" style="${cf.nVencido ? 'color:var(--red-t)' : ''}">${usd(cf.vencido)}</div><div class="m-s">${cf.nVencido ? `${cf.nVencido} ${plural(cf.nVencido, 'pago', 'pagos')} con fecha vencida` : 'nada atrasado'}</div></button>
+    <button type="button" class="metric" onclick="nav('cashflow')"><div class="m-l">A pagar en 30 días</div><div class="m-v">${usd(cf.in30)}</div><div class="m-s">${cf.n30 ? `${cf.n30} ${plural(cf.n30, 'pago programado', 'pagos programados')}` : 'nada programado'}</div></button>
+    <button type="button" class="metric" onclick="goOrders('curso')"><div class="m-l">Mercadería en curso</div><div class="m-v">${usd(active.reduce((s, o) => s + (Number(o.fob_total) || 0), 0))}</div><div class="m-s">FOB de ${active.length} ${plural(active.length, 'orden activa', 'órdenes activas')}</div></button>
+    <button type="button" class="metric" onclick="nav('dataquality')"><div class="m-l">Datos a completar</div><div class="m-v" style="${dqTotal ? 'color:var(--amber-t)' : ''}">${dqTotal}</div><div class="m-s">${dqTotal ? `en ${dq.length} ${plural(dq.length, 'orden', 'órdenes')}` : 'todo al día'}</div></button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;align-items:start;margin-bottom:20px">
+    <section class="box" style="grid-column:span 2;min-width:0">
+      <div class="box-h"><h2>Para resolver</h2><span class="sub">ordenado por impacto en la caja</span></div>
+      ${inbox.length ? inbox.slice(0, 7).map(i => `<div class="inbox-row">
+        <div class="inbox-ic ${i.tone}">${i.tone === 'blue' ? IC.info : IC.alert}</div>
+        <div style="flex:1 1 280px;min-width:0"><div style="font-size:14px;font-weight:600">${i.title}</div><div class="muted" style="margin-top:2px;line-height:1.45">${i.desc}</div></div>
+        <button type="button" class="btn" onclick="${i.on}">${i.cta}</button>
+      </div>`).join('') : `<div class="inbox-row"><div class="inbox-ic blue" style="background:var(--green-bg);color:var(--green-t)">${IC.check}</div><div style="font-size:14px;font-weight:600">Nada urgente. Todo al día.</div></div>`}
+    </section>
+    <section class="box" style="padding:18px 20px;min-width:0">
+      <h2 style="margin:0 0 4px;font-size:17px;font-weight:700">Caja comprometida</h2>
+      <p class="muted" style="margin:0 0 16px">${usd(cf.total)} en ${cf.nTotal} ${plural(cf.nTotal, 'pago', 'pagos')}</p>
+      ${cashRow('Atrasado', cf.vencido, 'var(--red)')}${cashRow('Próximos 30 días', cf.in30, 'var(--blue)')}${cashRow('Más adelante o sin fecha', later, '#98A2B3')}
+      <button type="button" class="btn btn-ghost" style="padding:0;color:var(--blue);min-height:32px" onclick="nav('cashflow')">Ver pagos y caja →</button>
+    </section>
+  </div>
+
+  <section class="box" style="padding:18px 20px;margin-bottom:20px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:17px;font-weight:700">Operaciones en curso</h2>
+      <button type="button" class="btn btn-ghost" style="margin-left:auto;color:var(--blue)" onclick="goOrders('curso')">Ver todas las órdenes →</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">${stageCards}</div>
+    ${sinEta.length ? `<div id="sec-noeta" style="display:flex;align-items:center;gap:8px;margin:22px 0 4px">${IC.ship}<h3 style="margin:0;font-size:15px;font-weight:700">${sinEta.length} ${plural(sinEta.length, 'orden', 'órdenes')} sin ETA</h3></div>
+    <p class="muted" style="margin:0 0 10px">Cargá la llegada estimada acá mismo: el flete y los tributos pasan a tener fecha en la caja.</p>
+    <div style="overflow-x:auto"><table class="tbl" style="min-width:620px"><thead><tr><th>Orden</th><th>Proveedor</th><th class="r">FOB</th><th>Llegada estimada (ETA)</th></tr></thead>
+      <tbody>${sinEta.slice(0, 8).map(o => `<tr style="cursor:default"><td><button type="button" class="code" style="border:0;background:none;padding:0;cursor:pointer" onclick="openDetail('${o.id}')">${esc(o.code)}</button></td><td class="muted">${esc(o.proveedor || '—')}</td><td class="r" style="font-weight:600">${usd(o.fob_total, true)}</td><td><label class="sr" for="eta-${o.id}">ETA de ${esc(o.code)}</label>${dqIn(o, 'eta', 'date', `id="eta-${o.id}"`)}</td></tr>`).join('')}</tbody></table></div>
+    ${sinEta.length > 8 ? `<button type="button" class="btn btn-ghost" style="color:var(--blue);margin-top:8px" onclick="dqGo('eta')">y ${sinEta.length - 8} más →</button>` : ''}` : ''}
+  </section>
+
+  <section class="box" style="padding:18px 20px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:17px;font-weight:700">Recordatorios</h2>
+      <div style="margin-left:auto;display:flex;gap:6px"><button type="button" class="btn btn-sm" onclick="nav('calendar')">Calendario</button><button type="button" class="btn btn-sm btn-primary" onclick="openAlertModal()">${IC.plus} Nuevo</button></div>
+    </div>
+    ${renderAlertsList(orders)}
+  </section>`
+}
+
+/* ── Órdenes ── */
+let ordersFilter = 'curso', ordersView = 'tabla', ordersSearch = ''
+const ORDER_FILTERS = [['curso', 'En curso'], ['previo', 'Muestra y cotización'], ['pedido', 'Pedido'], ['produccion', 'Producción'], ['transito', 'Tránsito'], ['aduana', 'Aduana'], ['entregado', 'Entregadas'], ['pendientes', 'Con pendientes'], ['todas', 'Todas']]
+function orderMatches(o, f) {
+  if (f === 'todas') return true
+  if (f === 'curso') return DQ_ACTIVE.includes(o.estado)
+  if (f === 'previo') return o.estado === 'muestra' || o.estado === 'cotizacion'
+  if (f === 'pendientes') return orderIssues(o).length > 0
+  return o.estado === f
+}
+function ordersBase() {
+  let os = ordersByCompany()
+  if (folderFilter) os = os.filter(o => o.folderId === folderFilter)
+  const q = ordersSearch.trim().toLowerCase()
+  if (q) os = os.filter(o => [o.code, o.proveedor, o.bl, o.categoria, o.buque].some(v => (v || '').toLowerCase().includes(q)))
+  return os
+}
+function orderRowHtml(o) {
+  const fob = Number(o.fob_total) || 0, pag = totalPagos(o), pct = fob ? Math.round(pag / fob * 100) : null
+  const late = o.eta && o.eta < todayISO() && ['transito', 'aduana'].includes(o.estado)
+  const needsEta = ['produccion', 'transito', 'aduana'].includes(o.estado)
+  const eta = o.eta ? (late ? `<span class="pill ${o.estado === 'transito' ? 'red' : 'amber'}">${shortDate(o.eta)} · hace ${daysAgo(o.eta)} d</span>` : `<span style="font-size:13px;color:#344054">${shortDate(o.eta)}</span>`)
+    : needsEta ? '<span class="pill amber">Sin ETA</span>' : '<span class="muted">—</span>'
+  const dc = docsCount(o)
+  const docs = o.estado === 'entregado' || !dc.need ? '<span class="muted">—</span>' : dc.done === dc.need ? '<span class="pill green">Completos</span>' : `<span class="pill amber">${dc.done} de ${dc.need}</span>`
+  const iss = orderIssues(o)
+  const next = iss.length ? `<span style="color:${iss[0].key === 'pagos' ? 'var(--red-t)' : 'var(--amber-t)'};font-weight:500">${iss[0].label}${iss.length > 1 ? ` <span class="muted">+${iss.length - 1}</span>` : ''}</span>` : '<span style="color:var(--green-t);font-weight:500">Al día</span>'
+  return `<tr onclick="openDetail('${o.id}')">
+    <td style="min-width:210px"><span class="code">${esc(o.code)}</span><div class="muted" style="margin-top:2px">${esc(o.proveedor || 'Sin proveedor')}</div></td>
+    <td style="white-space:nowrap">${STAGE5.includes(o.estado) ? stageDots(o.estado) : ''}<span style="font-size:13px;font-weight:600;color:${STAGE_COLOR[o.estado]}">${S_LABELS[o.estado] || o.estado}</span></td>
+    <td style="white-space:nowrap">${eta}</td>
+    <td class="r" style="font-weight:600;white-space:nowrap">${fob ? usd(fob, true) : '<span class="muted">—</span>'}</td>
+    <td style="min-width:110px">${pct === null ? '<span class="muted">Sin FOB</span>' : `<div style="font-size:13px;font-weight:600;${pct > 110 ? 'color:var(--red-t)' : ''}">${pct}%</div><div class="bar" style="height:6px;margin-top:5px"><div style="width:${Math.min(100, pct)}%;background:${pct > 110 ? 'var(--red)' : 'var(--green)'}"></div></div>`}</td>
+    <td style="white-space:nowrap">${docs}</td>
+    <td style="font-size:13px;min-width:180px">${next}</td>
+  </tr>`
+}
+function ordersRowsHtml() {
+  const rows = ordersBase().filter(o => orderMatches(o, ordersFilter))
+  return rows.length ? rows.map(orderRowHtml).join('') : `<tr style="cursor:default"><td colspan="7" style="padding:28px;text-align:center" class="muted">No hay órdenes ${ordersSearch ? 'que coincidan con la búsqueda' : 'en este filtro'}.</td></tr>`
+}
+function setOrdersFilter(f) { ordersFilter = f; renderPage() }
+function setOrdersView(v) { ordersView = v; renderPage() }
+function onOrdersSearch(v) { ordersSearch = v; const tb = document.getElementById('orders-rows'); if (tb) tb.innerHTML = ordersRowsHtml() }
+function kanbanHtml() {
+  // Reusa el tablero de tarjetas de antes (arrastrar para cambiar de estado).
+  const html = renderDashboard()
+  const style = (html.match(/<style>[\s\S]*?<\/style>/) || [''])[0]
+  const a = html.indexOf('<!-- KANBAN HORIZONTAL -->'), b = html.indexOf('<!-- Próximas llegadas -->')
+  return style + (a >= 0 && b > a ? html.slice(a, b) : '')
+}
+function renderOrdersV2() {
+  const all = ordersBase()
+  const active = ordersByCompany().filter(o => DQ_ACTIVE.includes(o.estado))
+  const folders = getFolders().filter(f => f.companyId === currentCompanyId)
+  const chips = ORDER_FILTERS.map(([k, l]) => [k, l, all.filter(o => orderMatches(o, k)).length])
+    .filter(([k, , n]) => n || ['curso', 'todas'].includes(k) || k === ordersFilter)
+  return `
+  <div class="pg-head">
+    <div class="grow"><h1>Órdenes</h1><p>${ordersByCompany().length} órdenes · ${active.length} en curso por ${usd(active.reduce((s, o) => s + (Number(o.fob_total) || 0), 0))} de FOB</p></div>
+    <div class="seg" role="group" aria-label="Vista">
+      <button type="button" aria-pressed="${ordersView === 'tabla'}" onclick="setOrdersView('tabla')">Tabla</button>
+      <button type="button" aria-pressed="${ordersView === 'tablero'}" onclick="setOrdersView('tablero')">Tablero</button>
+    </div>
+    <button type="button" class="btn btn-primary" style="min-height:44px" onclick="openNewOrder()">${IC.plus} Nueva orden</button>
+  </div>
+  ${ordersView === 'tablero' ? kanbanHtml() : `
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+    ${chips.map(([k, l, n]) => `<button type="button" class="chip${ordersFilter === k ? ' active' : ''}" aria-pressed="${ordersFilter === k}" onclick="setOrdersFilter('${k}')">${l} <span class="chip-n">${n}</span></button>`).join('')}
+    ${folders.length ? `<label class="sr" for="ord-folder">Carpeta</label><select id="ord-folder" class="select" style="width:auto;min-height:38px;border-radius:20px" onchange="folderFilter=this.value||null;renderPage()"><option value="">Todas las carpetas</option>${folders.map(f => `<option value="${f.id}" ${folderFilter === f.id ? 'selected' : ''}>${esc(f.nombre)}</option>`).join('')}</select>` : ''}
+    <label class="sr" for="ord-search">Buscar en órdenes</label>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;background:#fff;border:1px solid var(--border2);border-radius:10px;flex:0 1 280px">
+      ${IC.search}<input id="ord-search" type="search" value="${esc(ordersSearch)}" placeholder="Orden, proveedor, BL…" oninput="onOrdersSearch(this.value)" style="border:0;outline:0;flex:1;min-width:0;font:inherit;font-size:14px;background:transparent"/>
+    </div>
+  </div>
+  <section class="box" style="overflow:hidden">
+    <div style="overflow-x:auto"><table class="tbl" style="min-width:980px">
+      <thead><tr><th>Orden</th><th>Etapa</th><th>Llegada (ETA)</th><th class="r">FOB</th><th>Pagado</th><th>Documentos</th><th>Próximo paso</th></tr></thead>
+      <tbody id="orders-rows">${ordersRowsHtml()}</tbody>
+    </table></div>
+  </section>`}`
+}
+
+/* ── Detalle de orden (página) ── */
+let orderTab = 'productos'
+function openDetail(id) {
+  if (!getOrders().find(x => x.id === id)) return
+  const same = currentPage === 'order' && detailOrderId === id
+  detailOrderId = id
+  if (same) renderPage(); else nav('order')
+}
+// Compatibilidad: lo que antes cambiaba de pestaña en la ventana, ahora va a la sección de la página.
+function renderDetailTabs(o, tab) {
+  if (!o) return
+  if (tab && !['general', 'documentos'].includes(tab)) orderTab = tab
+  openDetail(o.id)
+  const target = tab === 'documentos' ? 'sec-docs' : tab && tab !== 'general' ? 'sec-tabs' : null
+  if (target) setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+}
+function setOrderTab(t) { orderTab = t; renderPage(); setTimeout(() => document.getElementById('sec-tabs')?.scrollIntoView({ block: 'start' }), 30) }
+
+function renderOrderPage() {
+  const o = getOrders().find(x => x.id === detailOrderId)
+  if (!o) return `<div class="box" style="padding:40px;text-align:center"><p class="muted">Esta orden no existe o fue borrada.</p><button type="button" class="btn" onclick="nav('orders')">Volver a Órdenes</button></div>`
+  const idx = STAGE5.indexOf(o.estado)
+  const next = idx < 0 ? 'pedido' : STAGE5[idx + 1]
+  const fob = Number(o.fob_total) || 0, pag = totalPagos(o), pct = fob ? Math.round(pag / fob * 100) : null
+  const iss = orderIssues(o)
+  const supp = getSuppliers().find(s => s.nombre === o.proveedor)
+  const sub = [o.proveedor, supp?.apodo, o.categoria].filter(Boolean).map(esc).join(' · ')
+
+  const stepSub = { pedido: o.createdAt ? 'Creada ' + shortDate(o.createdAt) : '', produccion: o.fin_prod ? 'Fin ' + shortDate(o.fin_prod) : '', transito: o.eta ? 'ETA ' + shortDate(o.eta) : '', aduana: o.estado === 'aduana' && o.eta && o.eta < todayISO() ? `Hace ${daysAgo(o.eta)} días` : '', entregado: o.fecha_entrega ? shortDate(o.fecha_entrega) : '' }
+  const steps = STAGE5.map((s, i) => {
+    const done = idx > i || (o.estado === 'entregado' && i === 4), cur = idx === i && s !== 'entregado'
+    const c = done ? 'var(--green)' : cur ? STAGE_COLOR[s] : 'var(--border)'
+    return `<li><div class="sb" style="background:${c}"></div><div style="display:flex;align-items:center;gap:6px;font-weight:600;color:${done ? 'var(--green-t)' : cur ? STAGE_COLOR[s] : 'var(--text3)'}">${done ? IC.check : ''}${s === 'entregado' ? 'Entregada' : S_LABELS[s]}</div><div class="muted" style="font-size:12px">${cur && !stepSub[s] ? 'Etapa actual' : stepSub[s] || (done ? '' : 'Pendiente')}</div></li>`
+  }).join('')
+
+  const red = iss.some(i => ['pagos', 'eta_pasada'].includes(i.key))
+  const callout = iss.length ? `<div class="callout ${red ? 'red' : 'amber'}" role="status" style="margin-bottom:18px">${IC.alert}<div><b>${iss.length === 1 ? 'Falta resolver 1 cosa' : `Faltan resolver ${iss.length} cosas`}:</b> ${iss.map(i => i.label).join(' · ')}.</div></div>` : ''
+
+  const fact = (label, value, warn) => `<div><dt>${label}</dt><dd style="${warn ? 'color:var(--amber-t)' : ''}">${value}</dd></div>`
+  const needsEta = ['produccion', 'transito', 'aduana'].includes(o.estado)
+  const cbm = (o.contenedores || []).reduce((s, c) => s + (Number(c.cbm) || 0), 0) || Number(o.cbm_est) || 0
+  const facts = [
+    fact('FOB', fob ? usd(fob, true) : dqIn(o, 'fob_total', 'number', 'min="0" step="0.01" aria-label="FOB"'), !fob),
+    fact('Pagado al proveedor', `${usd(pag, true)}${pct !== null ? ` <span class="muted" style="font-weight:500">(${pct}%)</span>` : ''}`),
+    fact('Llegada (ETA)', o.eta ? fmtDateFull(o.eta) : needsEta ? dqIn(o, 'eta', 'date', 'aria-label="ETA"') : '—'),
+    fact('Fin de producción', o.fin_prod ? fmtDateFull(o.fin_prod) : ['pedido', 'produccion'].includes(o.estado) ? dqIn(o, 'fin_prod', 'date', 'aria-label="Fin de producción"') : '—'),
+    fact('Número de BL', o.bl ? `<span class="code">${esc(o.bl)}</span>` : ['transito', 'aduana'].includes(o.estado) ? dqIn(o, 'bl', 'text', 'placeholder="ej: EISU9245083" aria-label="Número de BL"') : '—'),
+    fact('Naviera y buque', esc([o.naviera, o.buque].filter(Boolean).join(' · ')) || '—'),
+    fact('Volumen', cbm ? cbm.toFixed(1).replace('.', ',') + ' m³' : '—'),
+    fact('Incoterm / puerto', esc([o.incoterm, o.puerto].filter(Boolean).join(' · ')) || '—'),
+  ].join('')
+
+  const docRows = docsStatus(o).map(d => {
+    const color = d.done ? 'var(--green)' : d.needed && !d.optional ? 'var(--amber)' : 'var(--border2)'
+    const subTxt = d.viaFile ? '<span style="color:var(--green-t)">Archivo adjunto</span>' : d.manual ? (d.manual === 'na' ? 'No aplica' : 'Marcado como recibido') : d.needed ? (d.optional ? 'Opcional' : '<span style="color:var(--amber-t)">Falta</span>') : `Se pide desde ${S_LABELS[d.from]}`
+    const fileIdx = (o.archivos || []).findIndex(f => d.cats.includes(f.categoria))
+    const actions = d.viaFile ? `<button type="button" class="btn btn-sm" onclick="previewFile('${o.id}',${fileIdx})">Ver</button>`
+      : d.manual ? `<button type="button" class="btn btn-sm btn-ghost" onclick="setDocCheck('${o.id}','${d.key}',null)">Deshacer</button>`
+      : `<label class="btn btn-sm${d.needed ? '' : ' btn-ghost'}" style="cursor:pointer">Adjuntar<input type="file" class="sr" onchange="handleFileSelectCat(event,'${o.id}','${d.cats[0]}')"/></label>
+         ${d.needed ? `<button type="button" class="btn btn-sm btn-ghost" onclick="setDocCheck('${o.id}','${d.key}','ok')">Lo tengo</button>
+         <button type="button" class="btn btn-sm btn-ghost" onclick="setDocCheck('${o.id}','${d.key}','na')">No aplica</button>` : ''}`
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 20px;border-top:1px solid #EEF0F3;flex-wrap:wrap">
+      <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0" aria-hidden="true"></span>
+      <div style="flex:1 1 200px;min-width:0"><div style="font-size:14px;font-weight:600">${d.label}</div><div style="font-size:12px;color:var(--text3)">${subTxt}</div></div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${actions}</div></div>`
+  }).join('')
+  const dc = docsCount(o)
+
+  // Costo estimado vs. real
+  const q = quoteOf(o)
+  const est = o._estimado, estCd = est?.costoDetalle || null
+  const realCd = o._valoresReales ? (q?.costoDetalle || o._costoDetalle || null) : null
+  const realTotal = o._valoresReales ? Number(q?.landedTotal ?? o._landedTotal) || null : null
+  const realFlete = o._valoresReales ? Number(q?.flete ?? o._flete) || 0 : null
+  const gastos = cd => cd ? (Number(cd.total_locales) || 0) + (Number(cd.total_fee) || 0) + (Number(cd.iva_fee) || 0) : null
+  const cell = v => v === null || v === undefined ? '<span class="muted">—</span>' : usd(v, true)
+  const diffCell = (a, b) => a && b ? (() => { const d = (b - a) / a * 100; return `<span style="color:${d > 5 ? 'var(--red-t)' : d < -5 ? 'var(--green-t)' : 'var(--text2)'};font-weight:600">${d > 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')}%</span>` })() : ''
+  const costRows = [
+    ['Mercadería (FOB)', est ? Number(est.fob) || fob : null, o._valoresReales ? fob : null],
+    ['Flete', est ? Number(est.flete) || 0 : null, realFlete],
+    ['Tributos', estCd ? Number(estCd.total_trib) || 0 : null, realCd ? Number(realCd.total_trib) || 0 : null],
+    ['Gastos locales y fee', gastos(estCd), gastos(realCd)],
+  ]
+  const costBox = `<section class="box" style="padding:18px 20px">
+    <h2 style="margin:0 0 4px;font-size:17px;font-weight:700">Costo: estimado y real</h2>
+    <p class="muted" style="margin:0 0 12px">${est ? `Estimado guardado el ${shortDate(est.fecha)}${est.origen && est.origen !== 'orden' ? ' (presupuesto ' + esc(est.origen) + ')' : ''}.` : 'Esta orden no tiene un costo estimado guardado.'} ${o._valoresReales ? 'Valores reales cargados.' : 'El real se carga al entregar.'}</p>
+    <div style="overflow-x:auto"><table class="tbl" style="min-width:460px"><thead><tr><th>Concepto</th><th class="r">Estimado</th><th class="r">Real</th><th class="r">Diferencia</th></tr></thead><tbody>
+      ${costRows.map(([l, a, b]) => `<tr style="cursor:default"><td>${l}</td><td class="r">${cell(a)}</td><td class="r">${cell(b)}</td><td class="r">${diffCell(a, b)}</td></tr>`).join('')}
+      <tr style="cursor:default;font-weight:700"><td>Costo total (landed)</td><td class="r">${cell(est ? Number(est.landed) : null)}</td><td class="r">${realTotal ? usd(realTotal, true) : '<span class="muted" style="font-weight:500">al entregar</span>'}</td><td class="r">${diffCell(est ? Number(est.landed) : 0, realTotal)}</td></tr>
+    </tbody></table></div>
+    ${o.estado === 'entregado' ? `<button type="button" class="btn ${o._valoresReales ? '' : 'btn-primary'}" style="margin-top:12px" onclick="openRealValuesModal('${o.id}')">${o._valoresReales ? 'Editar valores reales' : 'Cargar valores reales'}</button>` : ''}
+  </section>`
+
+  // Columna derecha: próximo paso, pagos, actividad
+  const pend = cashflowItems().filter(i => i.orderId === o.id)
+  const nextBox = `<section class="box" style="padding:18px 20px;background:#F2F5FF;border-color:#D6E0FB">
+    <div style="font-size:12px;font-weight:600;color:var(--blue)">Próximo paso</div>
+    ${iss.length ? `<h2 style="margin:4px 0 10px;font-size:17px;font-weight:700">${iss[0].label}</h2>
+      <p style="margin:0 0 12px;font-size:14px;color:#344054;line-height:1.5">${iss[0].why}</p>
+      ${iss.length > 1 ? `<ul style="margin:0 0 12px;padding-left:18px;font-size:13px;color:#344054;line-height:1.7">${iss.slice(1).map(i => `<li>${i.label}</li>`).join('')}</ul>` : ''}`
+    : `<h2 style="margin:4px 0 10px;font-size:17px;font-weight:700">${next ? 'Todo al día para avanzar' : 'Orden cerrada'}</h2>`}
+    ${next ? `<button type="button" class="btn btn-primary" style="width:100%;min-height:44px" onclick="dqMove('${o.id}','${next}')">Pasar a ${next === 'entregado' ? 'Entregada' : S_LABELS[next]}</button>` : ''}
+  </section>`
+  const pagosBox = `<section class="box" style="padding:18px 20px">
+    <h2 style="margin:0 0 12px;font-size:17px;font-weight:700">Pagos</h2>
+    <div style="display:flex;justify-content:space-between;font-size:14px"><span>Proveedor</span><b>${usd(pag, true)}</b></div>
+    <div class="bar" style="height:6px;margin:6px 0 4px"><div style="width:${Math.min(100, pct || 0)}%;background:${pct > 110 ? 'var(--red)' : 'var(--green)'}"></div></div>
+    <div style="font-size:12px;font-weight:600;color:${pct > 110 ? 'var(--red-t)' : pct >= 100 ? 'var(--green-t)' : 'var(--text2)'};margin-bottom:12px">${pct === null ? 'Sin FOB cargado' : pct + '% del FOB'}</div>
+    ${pend.map(i => { const late = i.fecha && i.fecha < todayISO(); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;padding:10px 0;border-top:1px solid #EEF0F3"><span>${CF_TYPES[i.tipo].label}</span><span class="pill ${late ? 'red' : i.fecha ? 'gray' : 'amber'}">${usd(i.monto)} · ${i.fecha ? (late ? 'vencido' : shortDate(i.fecha)) : 'sin fecha'}</span></div>` }).join('')}
+    <button type="button" class="btn" style="width:100%;margin-top:12px" onclick="openPagoModal('${o.id}')">Registrar pago</button>
+  </section>`
+  const acts = []
+  if (o.createdAt) acts.push([o.createdAt, 'Orden creada'])
+  if (est) acts.push([est.fecha, `Se guardó el costo estimado: ${usd(est.landed)}`])
+  if (o._eta_original && o.eta && o._eta_original !== o.eta) acts.push([o.eta, `La ETA se corrió del ${shortDate(o._eta_original)} al ${shortDate(o.eta)}`])
+  else if (o.eta) acts.push([o.eta, 'Llegada estimada (ETA)'])
+  if (o.fecha_entrega) acts.push([o.fecha_entrega, 'Entregada'])
+  ;(o.pagos || []).forEach(p => p.fecha && acts.push([p.fecha, `Pago de ${usd(p.monto)}${p.tipo ? ' (' + esc(p.tipo) + ')' : ''}`]))
+  acts.sort((a, b) => (b[0] || '').localeCompare(a[0] || ''))
+  const actBox = `<section class="box" style="padding:18px 20px">
+    <h2 style="margin:0 0 12px;font-size:17px;font-weight:700">Actividad</h2>
+    ${acts.length ? `<ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px">${acts.slice(0, 8).map(([d, t]) => `<li style="display:flex;gap:10px"><span style="flex:0 0 8px;height:8px;border-radius:50%;background:#98A2B3;margin-top:6px" aria-hidden="true"></span><div><div style="font-size:14px">${t}</div><div class="muted" style="font-size:12px">${shortDate(d)}</div></div></li>`).join('')}</ol>` : '<p class="muted" style="margin:0">Sin actividad registrada.</p>'}
+  </section>`
+
+  const TABS = [['productos', 'Productos'], ['pagos', 'Pagos'], ['costos', 'Costos cargados'], ['contenedores', 'Contenedores'], ['archivos', 'Archivos'], ['timeline', 'Etapas']]
+  const tabsBox = `<section class="box" id="sec-tabs" style="padding:6px 20px 18px">
+    <div class="tabs" role="tablist" style="flex-wrap:wrap">${TABS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${orderTab === k}" class="tab${orderTab === k ? ' active' : ''}" onclick="setOrderTab('${k}')">${l}</button>`).join('')}</div>
+    <div>${detTabContent(o, orderTab)}</div>
+  </section>`
+
+  return `
+  <nav aria-label="Ruta" style="font-size:13px;color:var(--text2);margin-bottom:12px"><button type="button" class="btn btn-ghost" style="padding:0;min-height:28px;color:var(--blue)" onclick="nav('orders')">Órdenes</button> / ${esc(o.code)}</nav>
+  <div class="pg-head" style="align-items:flex-start">
+    <div class="grow"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h1>${esc(o.code)}</h1>${badge(o.estado)}</div><p>${sub || '&nbsp;'}</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" style="min-height:44px" onclick="editOrder()">Editar</button>
+      <button type="button" class="btn" style="min-height:44px" onclick="openOrderSummaryModal('${o.id}')">Resumen PDF / Excel</button>
+      <button type="button" class="btn btn-danger" style="min-height:44px" onclick="deleteOrder()">Eliminar</button>
+    </div>
+  </div>
+  <ol class="steps box" aria-label="Etapas de la orden" style="margin-bottom:18px">${steps}</ol>
+  ${callout}
+  <div class="two-col">
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <section class="box" style="padding:18px 20px"><h2 style="margin:0 0 14px;font-size:17px;font-weight:700">Resumen</h2><dl class="facts">${facts}</dl></section>
+      <section class="box" id="sec-docs"><div class="box-h"><h2>Documentos</h2><span class="sub" style="${dc.done < dc.need ? 'color:var(--amber-t);font-weight:600' : ''}">${dc.need ? (dc.done < dc.need ? `Faltan ${dc.need - dc.done} para la etapa ${S_LABELS[o.estado]}` : 'Al día para la etapa actual') : 'Todavía no se piden documentos'}</span></div>${docRows}</section>
+      ${costBox}
+      ${tabsBox}
+    </div>
+    <aside style="display:flex;flex-direction:column;gap:18px;min-width:0">${nextBox}${pagosBox}${actBox}</aside>
+  </div>`
+}
+
+/* ── Pagos y caja ── */
+function cfMarkPaid(orderId, tipo, monto) {
+  const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
+  if (!confirm(`¿Registrar ${usd(monto, true)} como pagado (${CF_TYPES[tipo].label}) en ${o.code}?`)) return
+  const nota = 'Registrado desde Pagos y caja'
+  if (tipo === 'proveedor') { o.pagos = o.pagos || []; o.pagos.push({ tipo: 'saldo', fecha: todayISO(), monto: Math.round(monto * 100) / 100, ref: '', notas: nota }) }
+  else {
+    const map = { flete: ['naviera', 'Flete marítimo'], aduana: ['impuesto', 'Tributos de aduana'], locales: ['otros', 'Gastos locales'] }[tipo]
+    o.costos = o.costos || []; o.costos.push({ cat: map[0], concepto: map[1], monto: Math.round(monto * 100) / 100, fecha: todayISO(), nota })
+  }
+  saveOrders(orders); toast(`${o.code}: pago registrado ✓`); renderPage()
+}
+function cfChangeDate(orderId, tipo, value) {
+  if (!value) return
+  const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
+  if (tipo === 'proveedor') o.fin_prod = value; else o.eta = value
+  trackOrderChange(o, o.estado); saveOrders(orders)
+  toast(`${o.code}: ${tipo === 'proveedor' ? 'fin de producción' : 'ETA'} actualizada ✓`); renderPage()
+}
+function renderCaja() {
+  const items = cashflowItems()
+  const cf = cashflowSummary()
+  const thisWeek = weekStartISO(todayISO()), lim30 = addDaysISO(todayISO(), 30), lim90 = addDaysISO(todayISO(), 90)
+  const sum = a => a.reduce((s, x) => s + x.monto, 0)
+  const venc = items.filter(i => i.fecha && weekStartISO(i.fecha) < thisWeek).sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const d30 = items.filter(i => i.fecha && weekStartISO(i.fecha) >= thisWeek && i.fecha <= lim30)
+  const d90 = items.filter(i => i.fecha && i.fecha > lim30 && i.fecha <= lim90)
+  const later = items.filter(i => !i.fecha || i.fecha > lim90)
+  const buckets = [['Atrasado', sum(venc), 'var(--red)'], ['Próximos 30 días', sum(d30), 'var(--blue)'], ['31 a 90 días', sum(d90), 'var(--teal)'], ['Más adelante o sin fecha', sum(later), '#98A2B3']]
+  const max = Math.max(1, ...buckets.map(b => b[1]))
+  const metric = (l, v, s, color) => `<div class="metric" style="cursor:default"><div class="m-l">${l}</div><div class="m-v" style="${color ? 'color:' + color : ''}">${v}</div><div class="m-s">${s}</div></div>`
+  const upcoming = items.filter(i => i.fecha && weekStartISO(i.fecha) >= thisWeek).sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const sinFecha = items.filter(i => !i.fecha)
+  const rowsOf = (arr, late) => arr.map(i => `<tr style="cursor:default">
+      <td><button type="button" class="code" style="border:0;background:none;padding:0;cursor:pointer" onclick="openDetail('${i.orderId}')">${esc(i.code)}</button><div class="muted">${esc(i.proveedor || '')}</div></td>
+      <td>${CF_TYPES[i.tipo].label}${i.basado === 'tasas generales' && i.tipo !== 'proveedor' ? ' <span class="muted" title="Sin presupuesto: estimado con las tasas generales">(estimado)</span>' : ''}</td>
+      <td style="white-space:nowrap">${i.fecha ? (late ? `<span class="pill red">${shortDate(i.fecha)} · hace ${daysAgo(i.fecha)} d</span>` : shortDate(i.fecha)) : '<span class="pill amber">Sin fecha</span>'}</td>
+      <td class="r" style="font-weight:700;white-space:nowrap">${usd(i.monto, true)}</td>
+      <td class="r" style="white-space:nowrap">
+        <button type="button" class="btn btn-sm" onclick="cfMarkPaid('${i.orderId}','${i.tipo}',${i.monto})">Marcar pagado</button>
+        <label class="sr" for="cfd-${i.orderId}-${i.tipo}">Nueva fecha</label>
+        <input id="cfd-${i.orderId}-${i.tipo}" type="date" class="input" title="${i.tipo === 'proveedor' ? 'Cambia el fin de producción' : 'Cambia la ETA de la orden'}" style="width:auto;min-height:36px;display:inline-block;padding:4px 8px;font-size:13px" onchange="cfChangeDate('${i.orderId}','${i.tipo}',this.value)"/>
+      </td></tr>`).join('')
+  const table = (title, sub, arr, late) => arr.length ? `<section class="box" style="margin-bottom:20px;overflow:hidden">
+      <div class="box-h"><h2>${title}</h2><span class="sub">${sub}</span></div>
+      <div style="overflow-x:auto"><table class="tbl" style="min-width:820px"><thead><tr><th>Orden</th><th>Concepto</th><th>Fecha</th><th class="r">Monto</th><th class="r">Acción</th></tr></thead><tbody>${rowsOf(arr, late)}</tbody></table></div>
+    </section>` : ''
+  return `
+  <div class="pg-head"><div class="grow"><h1>Pagos y caja</h1><p>Lo que tenés que pagar, cuándo y por qué orden</p></div></div>
+  <div class="grid-auto" style="margin-bottom:20px">
+    ${metric('Atrasado', usd(cf.vencido, true), `${venc.length} ${plural(venc.length, 'pago', 'pagos')} con fecha vencida`, venc.length ? 'var(--red-t)' : '')}
+    ${metric('Próximos 30 días', usd(sum(d30), true), `${d30.length} ${plural(d30.length, 'pago', 'pagos')}`)}
+    ${metric('Más adelante o sin fecha', usd(sum(later), true), sinFecha.length ? `${sinFecha.length} sin fecha: completá ETAs` : 'todo con fecha')}
+    ${metric('Total comprometido', usd(cf.total, true), `${items.length} ${plural(items.length, 'pago', 'pagos')} en ${new Set(items.map(i => i.orderId)).size} órdenes`)}
+  </div>
+  ${items.length ? `<section class="box" style="padding:18px 20px;margin-bottom:20px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:18px"><h2 style="margin:0;font-size:17px;font-weight:700">Cuándo sale la plata</h2><span class="muted">saldos a proveedores, flete, tributos y gastos locales</span></div>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:end;height:220px;border-bottom:1px solid var(--border2)">
+      ${buckets.map(([l, v, c]) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end"><span style="font-size:13px;font-weight:700">${usd(v)}</span><div style="width:70%;max-width:120px;height:${Math.max(v > 0 ? 4 : 2, Math.round(v / max * 170))}px;background:${v > 0 ? c : 'var(--border)'};border-radius:6px 6px 0 0"></div></div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding-top:8px">${buckets.map(([l]) => `<div style="text-align:center;font-size:13px;font-weight:500;color:#344054">${l}</div>`).join('')}</div>
+    <p class="muted" style="margin:14px 0 0;font-size:12px">Los tributos incluyen IVA y percepciones que después recuperás como crédito fiscal. Si una orden no tiene ETA, se estima con la salida + 35 días o el fin de producción + 45 días.</p>
+  </section>` : ''}
+  ${table('Atrasado', `${venc.length} ${plural(venc.length, 'pago', 'pagos')} · ${usd(sum(venc), true)} · ¿ya se pagó? marcalo; ¿se corrió? cambiá la fecha`, venc, true)}
+  ${table('Próximos pagos', `${upcoming.length} con fecha`, upcoming, false)}
+  ${table('Sin fecha', 'cargá fin de producción o ETA en la orden', sinFecha, false)}
+  <section style="margin-bottom:8px"><h2 style="margin:0 0 10px;font-size:17px;font-weight:700">Saldos con proveedores</h2>${renderPagos(true)}</section>`
+}
+
+/* ════════════════════════════════════
    SISTEMA DE USUARIOS Y PERMISOS
    Login con Firebase Auth. Los permisos de cada persona viven en
    la colección "access" (un documento por email), que las reglas
@@ -5645,16 +6210,25 @@ function applyUserPermissions() {
     const match = onclick.match(/nav\('(\w+)'\)/)
     if (match) { item.style.display = userCanSee(match[1]) ? '' : 'none' }
   })
+  // Títulos de grupo sin ninguna sección visible: se ocultan.
+  document.querySelectorAll('.sidebar-section').forEach(h => {
+    let el = h.nextElementSibling, any = false
+    while (el && !el.classList.contains('sidebar-section')) { if (el.classList.contains('nav-item') && el.style.display !== 'none') any = true; el = el.nextElementSibling }
+    h.style.display = any ? '' : 'none'
+  })
   const nav = document.querySelector('.sidebar') || document.querySelector('nav')
   if (nav && !document.getElementById('user-info-box')) {
     const box = document.createElement('div')
     box.id = 'user-info-box'
     box.style.cssText = 'margin-top:auto;padding:12px 14px;border-top:1px solid var(--border);font-size:12px'
     box.innerHTML = `
-      <div style="font-weight:700;color:var(--text)">${esc(currentUser.nombre)}</div>
-      <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis">${esc(currentUser.email)} · ${currentUser.rol==='admin'?'ADMIN':'USUARIO'}</div>
-      ${currentUser.rol==='admin'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="nav('users')">👤 Gestionar usuarios</button>`:''}
-      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="doLogout()">Cerrar sesión</button>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${esc((currentUser.nombre || currentUser.email).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span>
+        <div style="min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(currentUser.nombre)}</div>
+        <div style="font-size:12px;color:var(--text3)">${currentUser.rol==='admin'?'Administrador':'Usuario'}</div></div>
+      </div>
+      ${currentUser.rol==='admin'?`<button type="button" class="nav-item" onclick="nav('users')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Usuarios</span></button>`:''}
+      <button type="button" class="nav-item" onclick="doLogout()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></svg><span>Cerrar sesión</span></button>`
     nav.appendChild(box)
   }
 }
