@@ -2291,7 +2291,7 @@ function stepContent3() {
 function recalcOrderETA() {
   const etd = document.getElementById('o-etd')?.value
   const days = parseInt(document.getElementById('o-transit')?.value)||0
-  if(etd&&days) {
+  if(isFullDate(etd)&&days) {
     const eta=new Date(etd+'T12:00:00'); eta.setDate(eta.getDate()+days)
     document.getElementById('o-eta').value=eta.toISOString().slice(0,10)
   }
@@ -5032,6 +5032,11 @@ function snapshotEstimate(o) {
 
 // Registra fechas clave cuando cambia una orden: ETA y fin de producción originales, y fecha de entrega.
 function trackOrderChange(o, prevEstado) {
+  // Reparación: fechas guardadas a medio tipear (año 0002, 0020…). Una fecha actual rota se borra
+  // para que aparezca en Datos a completar; una original rota se reemplaza por la actual.
+  ;['eta', 'etd', 'fin_prod', 'fecha_pago'].forEach(k => { if (o[k] && !isFullDate(o[k])) o[k] = '' })
+  if (o._eta_original && !isFullDate(o._eta_original)) delete o._eta_original
+  if (o._fin_prod_original && !isFullDate(o._fin_prod_original)) delete o._fin_prod_original
   if (o.eta && !o._eta_original) o._eta_original = o.eta
   if (o.fin_prod && !o._fin_prod_original) o._fin_prod_original = o.fin_prod
   if (o.estado === 'entregado' && prevEstado !== 'entregado' && !o.fecha_entrega) o.fecha_entrega = todayISO()
@@ -5555,7 +5560,10 @@ function renderDataQuality() {
 }
 
 const DQ_NUMERIC = ['fob_total', '_flete']
+// Mientras se tipea el año, el navegador ya informa fechas como 0002-10-28: se ignoran hasta que el año esté completo.
+function isFullDate(v) { const m = /^(\d{4})-\d{2}-\d{2}$/.exec(v || ""); return !!m && +m[1] >= 2000 && +m[1] <= 2100 }
 function dqSet(orderId, field, value) {
+  if (/^\d{4,}-\d{2}-\d{2}$/.test(value || "") && !isFullDate(value)) return
   const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
   const v = DQ_NUMERIC.includes(field) ? (parseFloat(value) || 0) : value.trim()
   if (o[field] === v) return
@@ -6059,6 +6067,7 @@ function cfSavePay() {
   if (!cfPayCtx) return
   const lines = cfPayLines()
   const fecha = document.getElementById('cfp-fecha').value || todayISO()
+  if (!isFullDate(fecha)) return alert('Revisá la fecha de pago: el año tiene que tener 4 dígitos.')
   const ref = document.getElementById('cfp-ref').value.trim()
   const final = document.querySelector('input[name="cfp-tipo"]:checked')?.value !== 'parcial'
   if (!lines.length && !final) return alert('Cargá al menos un monto.')
@@ -6087,7 +6096,7 @@ function cfReopen(orderId, tipo) {
   saveOrders(orders); toast(`${o.code}: concepto reabierto`); renderPage()
 }
 function cfChangeDate(orderId, tipo, value) {
-  if (!value) return
+  if (!isFullDate(value)) return
   const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
   if (tipo === 'proveedor') o.fin_prod = value; else o.eta = value
   trackOrderChange(o, o.estado); saveOrders(orders)
