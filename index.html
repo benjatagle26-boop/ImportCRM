@@ -5153,7 +5153,8 @@ function docsStatus(o) {
   return DOC_REQS.map(d => {
     const viaFile = (o.archivos || []).some(f => d.cats.includes(f.categoria))
     const manual = o.docsCheck?.[d.key] || null
-    return { ...d, needed: idx >= S_ORDER.indexOf(d.from), done: viaFile || !!manual, viaFile, manual }
+    const link = safeUrl(o.docLinks?.[d.key])
+    return { ...d, needed: idx >= S_ORDER.indexOf(d.from), done: viaFile || !!manual || !!link, viaFile, manual, link }
   })
 }
 // Documentos obligatorios que ya deberían estar y faltan (solo órdenes activas).
@@ -5168,6 +5169,7 @@ function detDocumentos(o) {
   const row = d => {
     const icon = d.done ? '✅' : d.needed ? (d.optional ? '➖' : '⚠️') : '⬜'
     const note = d.viaFile ? '<span class="text-green" style="font-size:11px">archivo adjunto</span>'
+      : d.link ? extLink(d.link, 'link de Drive', 'text-green')
       : d.manual ? `<span style="font-size:11px;color:var(--text2)">${d.manual === 'na' ? 'no aplica' : 'marcado como recibido'}</span>`
       : d.needed ? `<span style="font-size:11px;color:${d.optional ? 'var(--text3)' : 'var(--amber-t)'}">${d.optional ? 'opcional' : 'falta'}</span>`
       : `<span style="font-size:11px;color:var(--text3)">se pide desde ${S_LABELS[d.from]}</span>`
@@ -5187,6 +5189,48 @@ function detDocumentos(o) {
     </div>
     <div style="border:1px solid var(--border);border-radius:var(--r);overflow:hidden">${st.map(row).join('')}</div>
     <p style="font-size:11px;color:var(--text3);margin-top:8px">Al adjuntar un archivo en la categoría que corresponde (pestaña Archivos), el documento se marca solo.</p>`
+}
+
+/* ── Links de Drive: carpeta de la orden y un link por documento ── */
+// Solo se aceptan links http(s): evita que un link guardado ejecute código al abrirlo.
+function safeUrl(u) { u = (u || '').trim(); return /^https?:\/\/[^\s"<>]+$/i.test(u) ? u : '' }
+function extLink(url, label, cls) { const u = safeUrl(url); return u ? `<a class="${cls || 'btn btn-sm'}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>` : '' }
+let linkCtx = null
+function openLinkModal(orderId, key) {
+  const o = getOrders().find(x => x.id === orderId); if (!o) return
+  const d = key ? DOC_REQS.find(x => x.key === key) : null
+  const cur = key ? (o.docLinks?.[key] || '') : (o.driveUrl || '')
+  linkCtx = { orderId, key }
+  let el = document.getElementById('modal-link')
+  if (!el) { el = document.createElement('div'); el.id = 'modal-link'; el.className = 'modal-overlay'; el.onclick = e => { if (e.target === el) closeLinkModal() }; document.body.appendChild(el) }
+  el.innerHTML = `<div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="lk-title">
+    <div class="modal-header"><span class="modal-title" id="lk-title">${esc(o.code)} · ${d ? esc(d.label) : 'Carpeta de Drive'}</span>
+      <button type="button" class="modal-close" aria-label="Cerrar" onclick="closeLinkModal()">✕</button></div>
+    <p class="muted" style="margin:0 0 12px">${d ? 'Pegá el link del archivo en Drive. El documento queda como recibido.' : 'Pegá el link de la carpeta de Drive donde guardás los documentos de esta orden.'} En Drive: botón derecho → Compartir → Copiar vínculo.</p>
+    <div class="form-group mb12"><label class="label" for="lk-url">Link</label>
+      <input class="input" type="url" id="lk-url" value="${esc(cur)}" placeholder="https://drive.google.com/…" onkeydown="if(event.key==='Enter')saveLink()"/>
+      <span class="form-hint" id="lk-err" style="color:var(--red-t)"></span></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      ${cur ? '<button type="button" class="btn btn-ghost" style="margin-right:auto;color:var(--red-t)" onclick="saveLink(true)">Quitar link</button>' : ''}
+      <button type="button" class="btn" onclick="closeLinkModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="saveLink()">Guardar</button></div>
+  </div>`
+  el.classList.add('open')
+  setTimeout(() => { const i = document.getElementById('lk-url'); if (i) { i.focus(); i.select() } }, 30)
+}
+function closeLinkModal() { const el = document.getElementById('modal-link'); if (el) el.classList.remove('open'); linkCtx = null; renderPage() }
+function saveLink(remove) {
+  if (!linkCtx) return
+  const raw = remove ? '' : document.getElementById('lk-url').value.trim()
+  const url = safeUrl(raw)
+  if (raw && !url) { document.getElementById('lk-err').textContent = 'El link tiene que empezar con https://'; return }
+  if (!raw && !remove) { document.getElementById('lk-err').textContent = 'Pegá un link o tocá Cancelar.'; return }
+  const orders = getOrders(); const o = orders.find(x => x.id === linkCtx.orderId); if (!o) return
+  if (linkCtx.key) { o.docLinks = o.docLinks || {}; if (url) o.docLinks[linkCtx.key] = url; else delete o.docLinks[linkCtx.key] }
+  else { if (url) o.driveUrl = url; else delete o.driveUrl }
+  saveOrders(orders)
+  toast(url ? 'Link guardado ✓' : 'Link quitado')
+  closeLinkModal()
 }
 
 function setDocCheck(orderId, key, value) {
@@ -5873,11 +5917,13 @@ function renderOrderPage() {
 
   const docRows = docsStatus(o).map(d => {
     const color = d.done ? 'var(--green)' : d.needed && !d.optional ? 'var(--amber)' : 'var(--border2)'
-    const subTxt = d.viaFile ? '<span style="color:var(--green-t)">Archivo adjunto</span>' : d.manual ? (d.manual === 'na' ? 'No aplica' : 'Marcado como recibido') : d.needed ? (d.optional ? 'Opcional' : '<span style="color:var(--amber-t)">Falta</span>') : `Se pide desde ${S_LABELS[d.from]}`
+    const subTxt = d.viaFile ? '<span style="color:var(--green-t)">Archivo adjunto</span>' : d.link ? '<span style="color:var(--green-t)">Link de Drive</span>' : d.manual ? (d.manual === 'na' ? 'No aplica' : 'Marcado como recibido') : d.needed ? (d.optional ? 'Opcional' : '<span style="color:var(--amber-t)">Falta</span>') : `Se pide desde ${S_LABELS[d.from]}`
     const fileIdx = (o.archivos || []).findIndex(f => d.cats.includes(f.categoria))
     const actions = d.viaFile ? `<button type="button" class="btn btn-sm" onclick="previewFile('${o.id}',${fileIdx})">Ver</button>`
+      : d.link ? `${extLink(d.link, 'Abrir')}<button type="button" class="btn btn-sm btn-ghost" onclick="openLinkModal('${o.id}','${d.key}')">Cambiar</button>`
       : d.manual ? `<button type="button" class="btn btn-sm btn-ghost" onclick="setDocCheck('${o.id}','${d.key}',null)">Deshacer</button>`
-      : `<label class="btn btn-sm${d.needed ? '' : ' btn-ghost'}" style="cursor:pointer">Adjuntar<input type="file" class="sr" onchange="handleFileSelectCat(event,'${o.id}','${d.cats[0]}')"/></label>
+      : `<button type="button" class="btn btn-sm${d.needed ? '' : ' btn-ghost'}" onclick="openLinkModal('${o.id}','${d.key}')">Pegar link</button>
+         <label class="btn btn-sm btn-ghost" style="cursor:pointer">Adjuntar<input type="file" class="sr" onchange="handleFileSelectCat(event,'${o.id}','${d.cats[0]}')"/></label>
          ${d.needed ? `<button type="button" class="btn btn-sm btn-ghost" onclick="setDocCheck('${o.id}','${d.key}','ok')">Lo tengo</button>
          <button type="button" class="btn btn-sm btn-ghost" onclick="setDocCheck('${o.id}','${d.key}','na')">No aplica</button>` : ''}`
     return `<div style="display:flex;align-items:center;gap:12px;padding:10px 20px;border-top:1px solid #EEF0F3;flex-wrap:wrap">
@@ -5964,7 +6010,7 @@ function renderOrderPage() {
   <div class="two-col">
     <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
       <section class="box" style="padding:18px 20px"><h2 style="margin:0 0 14px;font-size:17px;font-weight:700">Resumen</h2><dl class="facts">${facts}</dl></section>
-      <section class="box" id="sec-docs"><div class="box-h"><h2>Documentos</h2><span class="sub" style="${dc.done < dc.need ? 'color:var(--amber-t);font-weight:600' : ''}">${dc.need ? (dc.done < dc.need ? `Faltan ${dc.need - dc.done} para la etapa ${S_LABELS[o.estado]}` : 'Al día para la etapa actual') : 'Todavía no se piden documentos'}</span></div>${docRows}</section>
+      <section class="box" id="sec-docs"><div class="box-h"><h2>Documentos</h2><span style="margin-left:auto;order:3;display:flex;gap:6px;align-items:center">${o.driveUrl ? `${extLink(o.driveUrl, 'Carpeta de Drive', 'btn btn-sm btn-primary')}<button type="button" class="btn btn-sm btn-ghost" onclick="openLinkModal('${o.id}',null)">Cambiar</button>` : `<button type="button" class="btn btn-sm" onclick="openLinkModal('${o.id}',null)">+ Link de la carpeta de Drive</button>`}</span><span class="sub" style="${dc.done < dc.need ? 'color:var(--amber-t);font-weight:600' : ''}">${dc.need ? (dc.done < dc.need ? `Faltan ${dc.need - dc.done} para la etapa ${S_LABELS[o.estado]}` : 'Al día para la etapa actual') : 'Todavía no se piden documentos'}</span></div>${docRows}</section>
       ${costBox}
       ${tabsBox}
     </div>
