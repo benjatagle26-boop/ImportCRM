@@ -1204,7 +1204,8 @@ const PAGE_ACTION_FNS = { products:()=>openProductModal(), calendar:()=>openAler
 const PAGE_SECTION = { order: 'orders' }
 const PAGE_MENU = { order: 'orders', pagos: 'cashflow', dataquality: 'dashboard', calendar: 'dashboard', tracking: 'orders', costs: 'orders', folders: 'orders' }
 // Pantallas rediseñadas: tienen su propio encabezado, sin la barra superior vieja.
-const REDESIGNED = ['dashboard', 'orders', 'order', 'cashflow', 'calc']
+// Pantallas con encabezado propio; las demás reciben el encabezado común (genericHeader).
+const REDESIGNED = ['dashboard', 'orders', 'order', 'cashflow', 'calc', 'quotes', 'clients', 'suppliers', 'companies']
 
 function nav(page) {
   // Permission guard
@@ -1216,7 +1217,7 @@ function nav(page) {
   currentPage = page
   const menuKey = PAGE_MENU[page] || page
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', (el.getAttribute('onclick')||'').includes("nav('" + menuKey + "')")))
-  document.querySelector('.topbar').style.display = REDESIGNED.includes(page) ? 'none' : ''
+  document.querySelector('.topbar').style.display = 'none'
   const contentEl = document.getElementById('content'); if (contentEl) contentEl.scrollTop = 0
   document.getElementById('page-title').textContent = PAGE_TITLES[page] || page
   const btn = document.getElementById('topbar-action')
@@ -1233,8 +1234,8 @@ function handleSearch(q) {
 
 function renderPage() {
   const el = document.getElementById('content')
-  const pages = { order:renderOrderPage, dataquality:renderDataQuality, cashflow:renderCaja, analysis:renderAnalysis, products:renderProducts, dashboard:renderHome, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersV2, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClients, quotes:renderQuotes, suppliers:renderSuppliers, companies:renderCompanies, users:renderUsers }
-  if(pages[currentPage]) el.innerHTML = pages[currentPage]()
+  const pages = { order:renderOrderPage, dataquality:renderDataQuality, cashflow:renderCaja, analysis:renderAnalysis, products:renderProducts, dashboard:renderHome, calendar:renderCalendar, pagos:renderPagos, orders:renderOrdersV2, tracking:renderTracking, costs:renderCosts, calc:renderCalc, clients:renderClientsV2, quotes:renderQuotesV2, suppliers:renderSuppliersV2, companies:renderCompaniesV2, users:renderUsers }
+  if(pages[currentPage]) el.innerHTML = (REDESIGNED.includes(currentPage) ? '' : genericHeader(currentPage)) + pages[currentPage]()
   if(currentPage === 'calc') setTimeout(initCalcPage, 0)
   updateDataQualityBadge()
 }
@@ -5954,6 +5955,231 @@ function renderCaja() {
   ${table('Próximos pagos', `${upcoming.length} con fecha`, upcoming, false)}
   ${table('Sin fecha', 'cargá fin de producción o ETA en la orden', sinFecha, false)}
   <section style="margin-bottom:8px"><h2 style="margin:0 0 10px;font-size:17px;font-weight:700">Saldos con proveedores</h2>${renderPagos(true)}</section>`
+}
+
+/* ════════════════════════════════════
+   REDISEÑO — Presupuestos, Clientes, Proveedores, Empresas
+════════════════════════════════════ */
+const Q_STATES = [['borrador', 'Borrador', 'gray'], ['enviado', 'Enviado', 'blue'], ['en_negociacion', 'En negociación', 'amber'], ['aprobado', 'Aprobado', 'green'], ['rechazado', 'Rechazado', 'red']]
+const Q_OPEN = ['borrador', 'enviado', 'en_negociacion']
+function qPill(estado) { const s = Q_STATES.find(x => x[0] === estado) || [estado, estado, 'gray']; return `<span class="pill ${s[2]}">${s[1]}</span>` }
+function qPaid(q) { return (q.pagos || []).reduce((s, p) => s + (Number(p.monto) || 0), 0) }
+function searchBox(id, value, placeholder, handler) {
+  return `<label class="sr" for="${id}">${placeholder}</label>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;background:#fff;border:1px solid var(--border2);border-radius:10px;flex:0 1 280px">
+    ${IC.search}<input id="${id}" type="search" value="${esc(value)}" placeholder="${placeholder}" oninput="${handler}(this.value)" style="border:0;outline:0;flex:1;min-width:0;font:inherit;font-size:14px;background:transparent"/>
+  </div>`
+}
+function stop(e) { e.stopPropagation() }
+
+/* ── Presupuestos ── */
+let quotesFilter = 'abiertos', quotesSearch = ''
+function quoteMatches(q, f) {
+  if (f === 'todos') return true
+  if (f === 'abiertos') return Q_OPEN.includes(q.estado)
+  if (f === 'sin_orden') return q.estado === 'aprobado' && !q.orderId
+  if (f === 'vencidos') return Q_OPEN.includes(q.estado) && q.validez && q.validez < todayISO()
+  return q.estado === f
+}
+function quotesRowsHtml() {
+  const clients = getClients()
+  const qs = getQuotes().filter(q => q.companyId === currentCompanyId).filter(q => quoteMatches(q, quotesFilter))
+    .filter(q => { const s = quotesSearch.trim().toLowerCase(); if (!s) return true; const cl = clients.find(c => c.id === q.clientId); return [q.code, cl?.nombre, ...(q.items || []).map(i => i.desc)].some(v => (v || '').toLowerCase().includes(s)) })
+    .sort((a, b) => (b.fecha || b.createdAt || '').localeCompare(a.fecha || a.createdAt || ''))
+  if (!qs.length) return `<tr style="cursor:default"><td colspan="7" class="muted" style="padding:28px;text-align:center">No hay presupuestos ${quotesSearch ? 'que coincidan con la búsqueda' : 'en este filtro'}.</td></tr>`
+  return qs.map(q => {
+    const cl = clients.find(c => c.id === q.clientId)
+    const total = Number(q.total) || 0, paid = qPaid(q), pct = total ? Math.round(paid / total * 100) : 0
+    const expired = Q_OPEN.includes(q.estado) && q.validez && q.validez < todayISO()
+    const ord = q.orderId ? getOrders().find(o => o.id === q.orderId) : null
+    const items = (q.items || []).map(i => i.desc).filter(Boolean)
+    return `<tr onclick="openQuoteDetailFull('${q.id}')">
+      <td style="min-width:170px"><span class="code">${esc(q.code || '—')}</span><div class="muted" style="margin-top:2px">${q.fecha ? shortDate(q.fecha) : '—'}${items.length ? ' · ' + esc(items.slice(0, 2).join(', ')) + (items.length > 2 ? '…' : '') : ''}</div></td>
+      <td style="font-weight:500">${esc(cl?.nombre || '—')}</td>
+      <td style="white-space:nowrap" onclick="stop(event)">
+        <label class="sr" for="qs-${q.id}">Estado de ${esc(q.code || '')}</label>
+        <select id="qs-${q.id}" class="select" style="width:auto;min-height:34px;padding:4px 8px;font-size:13px" onchange="changeQStatus('${q.id}',this.value)">${Q_STATES.map(([k, l]) => `<option value="${k}" ${q.estado === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        ${expired ? `<div style="margin-top:4px"><span class="pill red">Venció ${shortDate(q.validez)}</span></div>` : q.validez && Q_OPEN.includes(q.estado) ? `<div class="muted" style="font-size:12px;margin-top:4px">Vence ${shortDate(q.validez)}</div>` : ''}
+      </td>
+      <td class="r" style="font-weight:600;white-space:nowrap">${usd(total, true)}</td>
+      <td style="min-width:110px">${paid ? `<div style="font-size:13px;font-weight:600">${usd(paid)}</div><div class="bar" style="height:6px;margin-top:5px"><div style="width:${Math.min(100, pct)}%;background:var(--green)"></div></div>` : '<span class="muted">—</span>'}</td>
+      <td style="white-space:nowrap" onclick="stop(event)">${ord ? `<button type="button" class="code" style="border:0;background:none;padding:0;cursor:pointer;color:var(--blue)" onclick="openDetail('${ord.id}')">${esc(ord.code)}</button>` : q.estado === 'aprobado' ? `<button type="button" class="btn btn-sm btn-primary" onclick="convertQuoteToOrder('${q.id}')">Crear orden</button>` : '<span class="muted">—</span>'}</td>
+      <td class="r" onclick="stop(event)"><button type="button" class="btn btn-sm" onclick="openEditQuote('${q.id}')">Editar</button></td>
+    </tr>`
+  }).join('')
+}
+function setQuotesFilter(f) { quotesFilter = f; renderPage() }
+function onQuotesSearch(v) { quotesSearch = v; const tb = document.getElementById('quotes-rows'); if (tb) tb.innerHTML = quotesRowsHtml() }
+function renderQuotesV2() {
+  const qs = getQuotes().filter(q => q.companyId === currentCompanyId)
+  const open = qs.filter(q => Q_OPEN.includes(q.estado)), noOrder = qs.filter(q => quoteMatches(q, 'sin_orden')), expired = qs.filter(q => quoteMatches(q, 'vencidos'))
+  const decided = qs.filter(q => ['aprobado', 'rechazado'].includes(q.estado)), approved = qs.filter(q => q.estado === 'aprobado')
+  const sum = a => a.reduce((s, q) => s + (Number(q.total) || 0), 0)
+  const filters = [['abiertos', 'Abiertos'], ['sin_orden', 'Aprobados sin orden'], ['vencidos', 'Vencidos'], ...Q_STATES.map(([k, l]) => [k, l]), ['todos', 'Todos']]
+  const chips = filters.map(([k, l]) => [k, l, qs.filter(q => quoteMatches(q, k)).length]).filter(([k, , n]) => n || ['abiertos', 'todos'].includes(k) || k === quotesFilter)
+  return `
+  <div class="pg-head"><div class="grow"><h1>Presupuestos</h1><p>${qs.length} ${plural(qs.length, "presupuesto", "presupuestos")} · ${open.length} ${plural(open.length, "abierto", "abiertos")} por ${usd(sum(open))}</p></div>
+    <button type="button" class="btn btn-primary" style="min-height:44px" onclick="nav('calc')">${IC.plus} Nuevo desde la calculadora</button></div>
+  <div class="grid-auto" style="margin-bottom:20px">
+    <button type="button" class="metric" onclick="setQuotesFilter('abiertos')"><div class="m-l">Abiertos</div><div class="m-v">${usd(sum(open))}</div><div class="m-s">${open.length} sin decisión del cliente</div></button>
+    <button type="button" class="metric" onclick="setQuotesFilter('sin_orden')"><div class="m-l">Aprobados sin orden</div><div class="m-v" style="${noOrder.length ? 'color:var(--amber-t)' : ''}">${noOrder.length}</div><div class="m-s">${noOrder.length ? usd(sum(noOrder)) + ' para pasar a orden' : 'todos convertidos'}</div></button>
+    <button type="button" class="metric" onclick="setQuotesFilter('vencidos')"><div class="m-l">Vencidos</div><div class="m-v" style="${expired.length ? 'color:var(--red-t)' : ''}">${expired.length}</div><div class="m-s">${expired.length ? 'abiertos con la validez pasada' : 'ninguno vencido'}</div></button>
+    <div class="metric" style="cursor:default"><div class="m-l">Tasa de aprobación</div><div class="m-v">${decided.length ? Math.round(approved.length / decided.length * 100) + '%' : '—'}</div><div class="m-s">${approved.length} aprobados de ${decided.length} decididos</div></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+    ${chips.map(([k, l, n]) => `<button type="button" class="chip${quotesFilter === k ? ' active' : ''}" aria-pressed="${quotesFilter === k}" onclick="setQuotesFilter('${k}')">${l} <span class="chip-n">${n}</span></button>`).join('')}
+    ${searchBox('q-search', quotesSearch, 'Código, cliente o producto…', 'onQuotesSearch')}
+  </div>
+  <section class="box" style="overflow:hidden"><div style="overflow-x:auto"><table class="tbl" style="min-width:900px">
+    <thead><tr><th>Presupuesto</th><th>Cliente</th><th>Estado</th><th class="r">Total</th><th>Cobrado</th><th>Orden</th><th></th></tr></thead>
+    <tbody id="quotes-rows">${quotesRowsHtml()}</tbody></table></div></section>`
+}
+
+/* ── Clientes ── */
+let clientsSearch = ''
+function clientsRowsHtml() {
+  const qs = getQuotes().filter(q => q.companyId === currentCompanyId)
+  const s = clientsSearch.trim().toLowerCase()
+  const cls = getClients().filter(c => c.companyId === currentCompanyId)
+    .filter(c => !s || [c.nombre, c.cuit, c.contacto, c.email].some(v => (v || '').toLowerCase().includes(s)))
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+  if (!cls.length) return `<tr style="cursor:default"><td colspan="6" class="muted" style="padding:28px;text-align:center">${clientsSearch ? 'Ningún cliente coincide con la búsqueda.' : 'Todavía no hay clientes.'}</td></tr>`
+  return cls.map(c => {
+    const cq = qs.filter(q => q.clientId === c.id), open = cq.filter(q => Q_OPEN.includes(q.estado))
+    const approved = cq.filter(q => q.estado === 'aprobado'), vendido = approved.reduce((t, q) => t + (Number(q.total) || 0), 0)
+    const cobrado = cq.reduce((t, q) => t + qPaid(q), 0), saldo = Math.max(0, vendido - cobrado)
+    const init = esc((c.nombre || '?').split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase())
+    return `<tr onclick="openClientDetail('${c.id}')">
+      <td style="min-width:220px"><div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:50%;background:var(--blue-bg);color:var(--blue);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${init}</span><div><div style="font-weight:600">${esc(c.nombre)}</div><div class="muted">${esc(c.seg || '—')}${c.cuit ? ' · CUIT ' + esc(c.cuit) : ''}</div></div></div></td>
+      <td><div style="font-size:13px">${esc(c.contacto || '—')}</div><div class="muted">${esc([c.email, c.tel].filter(Boolean).join(' · '))}</div></td>
+      <td>${cq.length}${open.length ? ` <span class="pill blue" style="margin-left:4px">${open.length} ${plural(open.length, 'abierto', 'abiertos')}</span>` : ''}</td>
+      <td class="r" style="font-weight:600;white-space:nowrap">${vendido ? usd(vendido) : '<span class="muted">—</span>'}</td>
+      <td class="r" style="white-space:nowrap">${saldo ? `<span style="color:var(--amber-t);font-weight:600">${usd(saldo)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="r" onclick="stop(event)"><button type="button" class="btn btn-sm btn-ghost" style="color:var(--red-t)" onclick="deleteClient('${c.id}')" aria-label="Borrar ${esc(c.nombre)}">Borrar</button></td>
+    </tr>`
+  }).join('')
+}
+function onClientsSearch(v) { clientsSearch = v; const tb = document.getElementById('clients-rows'); if (tb) tb.innerHTML = clientsRowsHtml() }
+function renderClientsV2() {
+  const cls = getClients().filter(c => c.companyId === currentCompanyId)
+  return `
+  <div class="pg-head"><div class="grow"><h1>Clientes</h1><p>${cls.length} ${plural(cls.length, 'cliente', 'clientes')} de ${esc(getCompanies().find(c => c.id === currentCompanyId)?.nombre || '')}</p></div>
+    <button type="button" class="btn btn-primary" style="min-height:44px" onclick="openNewClient()">${IC.plus} Nuevo cliente</button></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">${searchBox('cl-search', clientsSearch, 'Nombre, CUIT, contacto o email…', 'onClientsSearch')}</div>
+  <section class="box" style="overflow:hidden"><div style="overflow-x:auto"><table class="tbl" style="min-width:860px">
+    <thead><tr><th>Cliente</th><th>Contacto</th><th>Presupuestos</th><th class="r">Vendido (aprobado)</th><th class="r">Saldo a cobrar</th><th></th></tr></thead>
+    <tbody id="clients-rows">${clientsRowsHtml()}</tbody></table></div></section>`
+}
+
+/* ── Proveedores ── */
+let suppliersFolder = 'todas', suppliersSearch = ''
+function supplierPerf(nombre) {
+  // Desvío de costo y atraso promedio de sus órdenes entregadas (mismo criterio que Estimado vs. real).
+  const os = getOrders().filter(o => o.proveedor === nombre && (o._valoresReales || o.estado === 'entregado'))
+  const desv = [], atr = []
+  os.forEach(o => {
+    const q = quoteOf(o), est = Number(o._estimado?.landed) || 0, real = o._valoresReales ? Number(q?.landedTotal ?? o._landedTotal) || 0 : 0
+    if (est && real) desv.push((real - est) / est * 100)
+    if (o._eta_original && o.fecha_entrega) atr.push(daysBetween(o._eta_original, o.fecha_entrega))
+  })
+  const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null
+  return { desv: avg(desv), atr: avg(atr) }
+}
+function suppliersRowsHtml() {
+  const folders = getSupplierFolders(), orders = getOrders()
+  const s = suppliersSearch.trim().toLowerCase()
+  const list = getSuppliers().filter(x => suppliersFolder === 'todas' ? true : suppliersFolder === 'sin' ? (!x.folderId || !folders.some(f => f.id === x.folderId)) : x.folderId === suppliersFolder)
+    .filter(x => !s || [x.nombre, x.apodo, x.ciudad, x.cat, x.contacto].some(v => (v || '').toLowerCase().includes(s)))
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''))
+  if (!list.length) return `<tr style="cursor:default"><td colspan="7" class="muted" style="padding:28px;text-align:center">${suppliersSearch ? 'Ningún proveedor coincide con la búsqueda.' : 'No hay proveedores en esta carpeta.'}</td></tr>`
+  return list.map(x => {
+    const so = orders.filter(o => o.proveedor === x.nombre), act = so.filter(o => DQ_ACTIVE.includes(o.estado))
+    const fob = so.reduce((t, o) => t + (Number(o.fob_total) || 0), 0)
+    const p = supplierPerf(x.nombre)
+    const perf = p.desv === null && p.atr === null ? '<span class="muted">Sin datos aún</span>'
+      : `${p.desv !== null ? `<div style="font-size:13px;color:${p.desv > 5 ? 'var(--red-t)' : p.desv < -5 ? 'var(--green-t)' : 'var(--text)'}">Costo ${p.desv > 0 ? '+' : ''}${p.desv.toFixed(1).replace('.', ',')}%</div>` : ''}${p.atr !== null ? `<div style="font-size:13px;color:${p.atr > 7 ? 'var(--red-t)' : 'var(--text2)'}">${p.atr > 0 ? Math.round(p.atr) + ' días de atraso' : 'A tiempo'}</div>` : ''}`
+    const last = (x.comments || []).slice(-1)[0]
+    return `<tr onclick="editSupplier('${x.id}')">
+      <td style="min-width:220px"><div style="font-weight:600">${esc(x.nombre)}</div><div class="muted">${esc([x.apodo, x.ciudad].filter(Boolean).join(' · ') || '—')}</div>${last ? `<div class="muted" style="font-size:12px;margin-top:3px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(last.txt || '')}">Nota: ${esc(last.txt || '')}</div>` : ''}</td>
+      <td class="muted">${esc(x.cat || '—')}</td>
+      <td style="white-space:nowrap">${x.leadtime ? esc(x.leadtime) + ' días' : '<span class="muted">—</span>'}</td>
+      <td>${so.length}${act.length ? ` <span class="pill blue" style="margin-left:4px">${act.length} en curso</span>` : ''}</td>
+      <td class="r" style="font-weight:600;white-space:nowrap">${fob ? usd(fob) : '<span class="muted">—</span>'}</td>
+      <td style="white-space:nowrap">${perf}</td>
+      <td onclick="stop(event)"><label class="sr" for="sf-${x.id}">Carpeta de ${esc(x.nombre)}</label><select id="sf-${x.id}" class="select" style="width:auto;min-height:34px;padding:4px 8px;font-size:13px" onchange="assignSupplierFolder('${x.id}',this.value)"><option value="">Sin carpeta</option>${folders.map(f => `<option value="${f.id}" ${x.folderId === f.id ? 'selected' : ''}>${esc(f.nombre)}</option>`).join('')}</select></td>
+    </tr>`
+  }).join('')
+}
+function setSuppliersFolder(f) { suppliersFolder = f; renderPage() }
+function onSuppliersSearch(v) { suppliersSearch = v; const tb = document.getElementById('suppliers-rows'); if (tb) tb.innerHTML = suppliersRowsHtml() }
+function renderSuppliersV2() {
+  const sup = getSuppliers(), folders = getSupplierFolders()
+  const unfiled = sup.filter(x => !x.folderId || !folders.some(f => f.id === x.folderId)).length
+  if (suppliersFolder !== 'todas' && suppliersFolder !== 'sin' && !folders.some(f => f.id === suppliersFolder)) suppliersFolder = 'todas'
+  const chips = [['todas', 'Todos', sup.length], ...folders.map(f => [f.id, f.nombre, sup.filter(x => x.folderId === f.id).length]), ...(folders.length ? [['sin', 'Sin carpeta', unfiled]] : [])]
+  const curFolder = folders.find(f => f.id === suppliersFolder)
+  return `
+  <div class="pg-head"><div class="grow"><h1>Proveedores</h1><p>${sup.length} ${plural(sup.length, "proveedor", "proveedores")} en ${folders.length} ${plural(folders.length, 'carpeta', 'carpetas')} de producto</p></div>
+    <button type="button" class="btn" style="min-height:44px" onclick="openModal('modal-sfolder')">Nueva carpeta</button>
+    <button type="button" class="btn btn-primary" style="min-height:44px" onclick="openNewSupplier()">${IC.plus} Agregar proveedor</button></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+    ${chips.map(([k, l, n]) => `<button type="button" class="chip${suppliersFolder === k ? ' active' : ''}" aria-pressed="${suppliersFolder === k}" onclick="setSuppliersFolder('${k}')">${esc(l)} <span class="chip-n">${n}</span></button>`).join('')}
+    ${curFolder ? `<button type="button" class="btn btn-sm btn-ghost" style="color:var(--red-t)" onclick="delSupplierFolder('${curFolder.id}')">Eliminar carpeta</button>` : ''}
+    ${searchBox('sup-search', suppliersSearch, 'Nombre, ciudad, categoría…', 'onSuppliersSearch')}
+  </div>
+  ${curFolder?.desc ? `<p class="muted" style="margin:-6px 0 14px">${esc(curFolder.desc)}</p>` : ''}
+  <section class="box" style="overflow:hidden"><div style="overflow-x:auto"><table class="tbl" style="min-width:980px">
+    <thead><tr><th>Proveedor</th><th>Categoría</th><th>Lead time</th><th>Órdenes</th><th class="r">FOB total</th><th>Desempeño</th><th>Carpeta</th></tr></thead>
+    <tbody id="suppliers-rows">${suppliersRowsHtml()}</tbody></table></div></section>
+  <p class="muted" style="font-size:12px;margin-top:8px">Desempeño: desvío promedio entre el costo estimado y el real, y atraso contra la ETA original, de las órdenes entregadas desde que el CRM guarda el estimado.</p>`
+}
+
+/* ── Empresas ── */
+function renderCompaniesV2() {
+  const cos = getCompanies(), isAdmin = currentUser?.rol === 'admin'
+  return `
+  <div class="pg-head"><div class="grow"><h1>Empresas</h1><p>Cada empresa tiene sus propias órdenes, clientes y presupuestos</p></div>
+    ${isAdmin ? `<button type="button" class="btn btn-primary" style="min-height:44px" onclick="openModal('modal-company')">${IC.plus} Nueva empresa</button>` : ''}</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+    ${cos.filter(c => userCanSeeCompany(c.id)).map(c => {
+      const os = getOrders().filter(o => o.companyId === c.id), act = os.filter(o => DQ_ACTIVE.includes(o.estado))
+      const isActive = c.id === currentCompanyId
+      return `<section class="box" style="padding:18px 20px;${isActive ? 'border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)' : ''}">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <span style="width:40px;height:40px;border-radius:10px;background:${esc(c.color)};color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${esc((c.nombre || '?')[0])}</span>
+          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">${esc(c.nombre)}</div><div class="muted">${c.cuit ? 'CUIT ' + esc(c.cuit) : 'Sin CUIT cargado'}</div></div>
+          ${isActive ? '<span class="pill blue">Activa</span>' : ''}
+        </div>
+        <dl class="facts" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px">
+          <div><dt>Órdenes en curso</dt><dd>${act.length}</dd></div>
+          <div><dt>FOB en curso</dt><dd>${usd(act.reduce((s, o) => s + (Number(o.fob_total) || 0), 0))}</dd></div>
+        </dl>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${isActive ? '' : `<button type="button" class="btn btn-sm btn-primary" onclick="selectCompany('${c.id}')">Cambiar a esta empresa</button>`}
+          <button type="button" class="btn btn-sm" onclick="openBrandingModal('${c.id}')">Logo y colores</button>
+          ${!isActive && isAdmin ? `<button type="button" class="btn btn-sm btn-ghost" style="color:var(--red-t)" onclick="deleteCompany('${c.id}')">Eliminar</button>` : ''}
+        </div>
+      </section>`
+    }).join('')}
+  </div>`
+}
+
+/* ── Encabezado común para las demás pantallas ── */
+const PAGE_SUBS = {
+  products: 'Posición arancelaria, derecho, IVA y volumen de cada producto. La calculadora los usa.',
+  analysis: 'Costo estimado contra el real y entregas contra la ETA original, por proveedor y por orden.',
+  dataquality: 'Lo que le falta a cada orden, con el arreglo en el mismo lugar.',
+  users: 'Quién puede entrar al CRM y qué empresas y secciones ve.',
+  calendar: 'Fechas de las órdenes y recordatorios del equipo.',
+  tracking: 'Buscá un embarque por número de BL, contenedor o buque.',
+  costs: 'Gastos cargados en las órdenes, por categoría.',
+  pagos: 'Saldos con proveedores y forma de pago.',
+  folders: 'Agrupá órdenes por temporada o proyecto.',
+}
+function genericHeader(page) {
+  const act = PAGE_ACTIONS[page], fn = PAGE_ACTION_FNS[page]
+  return `<div class="pg-head"><div class="grow"><h1>${PAGE_TITLES[page] || page}</h1>${PAGE_SUBS[page] ? `<p>${PAGE_SUBS[page]}</p>` : ''}</div>
+    ${act && fn ? `<button type="button" class="btn btn-primary" style="min-height:44px" onclick="topbarAction()">${IC.plus} ${esc(act.replace(/^\+\s*/, ''))}</button>` : ''}</div>`
 }
 
 /* ════════════════════════════════════
