@@ -5204,35 +5204,53 @@ const CF_TYPES = {
   locales:   { label: 'Gastos locales',    color: 'var(--amber)' },
 }
 
+const CF_ACTIVE = ['pedido', 'produccion', 'transito', 'aduana']
+const CF_CAT = { flete: ['naviera', 'Flete marítimo'], aduana: ['impuesto', 'Tributos de aduana'], locales: ['otros', 'Gastos locales'] }
+
+// Por concepto de una orden: cuánto se presupuestó, cuánto se pagó de verdad, qué falta y si quedó cerrado.
+// Un concepto queda cerrado cuando se pagó todo o cuando se registró el pago final con el monto real
+// (aunque haya sido menos que lo presupuestado).
+function cfConcepts(o) {
+  const cfg = getCalcConfig()
+  const fob = Number(o.fob_total) || 0
+  const q = quoteOf(o)
+  const cd = (!o._valoresReales && (q?.costoDetalle || o._costoDetalle)) || o._estimado?.costoDetalle || null
+  // Con valores reales cargados, el presupuesto original es el que quedó guardado en _estimado.
+  const fleteEst = Number(o._valoresReales ? (o._estimado?.flete ?? q?.flete ?? o._flete) : (q?.flete ?? o._flete)) || 0
+  let trib, loc, basado
+  if (cd && (cd.total_trib || cd.total_locales)) {
+    trib = Number(cd.total_trib) || 0
+    loc = (Number(cd.total_locales) || 0) + (Number(cd.total_fee) || 0) + (Number(cd.iva_fee) || 0)
+    basado = 'presupuesto'
+  } else {
+    const t = computeLanded(fob, fleteEst, cfg, 'A', true)
+    trib = t.total_trib; loc = t.total_locales; basado = 'tasas generales'
+  }
+  // Sin ETA: se estima con la salida (ETD + 35 días) o con el fin de producción (+ 45 días).
+  const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : o.fin_prod ? addDaysISO(o.fin_prod, 45) : null)
+  const cierre = o._cfCierre || {}
+  const rows = [
+    ['proveedor', fob, totalPagos(o), o.fin_prod || o.etd || (o.eta ? addDaysISO(o.eta, -30) : null)],
+    ['flete', fleteEst, totalCostosCat(o, 'naviera'), etaish],
+    ['aduana', trib, totalCostosCat(o, 'impuesto'), etaish ? addDaysISO(etaish, 3) : null],
+    ['locales', loc, totalCostosCat(o, 'otros'), etaish ? addDaysISO(etaish, 7) : null],
+  ]
+  return rows.map(([tipo, est, pagado, fecha]) => {
+    // El presupuesto que se tomó al cerrar queda fijo para la comparación final.
+    const presup = toCents(cierre[tipo]?.presupuestado ?? est)
+    const pagadoC = Math.round((Number(pagado) || 0) * 100) / 100
+    const cerrado = !!cierre[tipo] || (presup > 0 && toCents(presup - pagadoC) === 0)
+    // Pendientes redondeados a centavos: un resto menor a un centavo cuenta como pagado.
+    const pend = cerrado ? 0 : toCents(presup - pagadoC)
+    return { tipo, presup, pagado: pagadoC, pend, cerrado, cierreManual: !!cierre[tipo], fecha, basado: tipo === 'proveedor' ? 'fob' : basado }
+  }).filter(c => c.presup > 0 || c.pagado > 0)
+}
+
 function cashflowItems() {
   const items = []
-  const cfg = getCalcConfig()
-  ordersByCompany().filter(o => ['pedido', 'produccion', 'transito', 'aduana'].includes(o.estado)).forEach(o => {
-    const fob = Number(o.fob_total) || 0
-    const q = quoteOf(o)
-    const cd = (!o._valoresReales && (q?.costoDetalle || o._costoDetalle)) || o._estimado?.costoDetalle || null
-    const fleteEst = Number(q?.flete ?? o._flete) || 0
-    let trib, loc, basado
-    if (cd && (cd.total_trib || cd.total_locales)) {
-      trib = Number(cd.total_trib) || 0
-      loc = (Number(cd.total_locales) || 0) + (Number(cd.total_fee) || 0) + (Number(cd.iva_fee) || 0)
-      basado = 'presupuesto'
-    } else {
-      const t = computeLanded(fob, fleteEst, cfg, 'A', true)
-      trib = t.total_trib; loc = t.total_locales; basado = 'tasas generales'
-    }
-    // Pendientes redondeados a centavos: un resto menor a un centavo cuenta como pagado.
-    const saldo = toCents(fob - totalPagos(o))
-    const fletePend = toCents(fleteEst - totalCostosCat(o, 'naviera'))
-    const tribPend = toCents(trib - totalCostosCat(o, 'impuesto'))
-    const locPend = toCents(loc - totalCostosCat(o, 'otros'))
-    // Sin ETA: se estima con la salida (ETD + 35 días) o con el fin de producción (+ 45 días).
-    const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : o.fin_prod ? addDaysISO(o.fin_prod, 45) : null)
-    const base = { orderId: o.id, code: o.code, proveedor: o.proveedor || '', basado }
-    if (saldo > 0) items.push({ ...base, tipo: 'proveedor', monto: saldo, fecha: o.fin_prod || o.etd || (o.eta ? addDaysISO(o.eta, -30) : null) })
-    if (fletePend > 0) items.push({ ...base, tipo: 'flete', monto: fletePend, fecha: etaish })
-    if (tribPend > 0) items.push({ ...base, tipo: 'aduana', monto: tribPend, fecha: etaish ? addDaysISO(etaish, 3) : null })
-    if (locPend > 0) items.push({ ...base, tipo: 'locales', monto: locPend, fecha: etaish ? addDaysISO(etaish, 7) : null })
+  ordersByCompany().filter(o => CF_ACTIVE.includes(o.estado)).forEach(o => {
+    const base = { orderId: o.id, code: o.code, proveedor: o.proveedor || '' }
+    cfConcepts(o).forEach(c => { if (c.pend > 0) items.push({ ...base, tipo: c.tipo, monto: c.pend, presup: c.presup, pagado: c.pagado, fecha: c.fecha, basado: c.basado }) })
   })
   return items
 }
@@ -5892,16 +5910,98 @@ function renderOrderPage() {
 }
 
 /* ── Pagos y caja ── */
-function cfMarkPaid(orderId, tipo, monto) {
-  const orders = getOrders(); const o = orders.find(x => x.id === orderId); if (!o) return
-  if (!confirm(`¿Registrar ${usd(monto, true)} como pagado (${CF_TYPES[tipo].label}) en ${o.code}?`)) return
-  const nota = 'Registrado desde Pagos y caja'
-  if (tipo === 'proveedor') { o.pagos = o.pagos || []; o.pagos.push({ tipo: 'saldo', fecha: todayISO(), monto: Math.round(monto * 100) / 100, ref: '', notas: nota }) }
-  else {
-    const map = { flete: ['naviera', 'Flete marítimo'], aduana: ['impuesto', 'Tributos de aduana'], locales: ['otros', 'Gastos locales'] }[tipo]
-    o.costos = o.costos || []; o.costos.push({ cat: map[0], concepto: map[1], monto: Math.round(monto * 100) / 100, fecha: todayISO(), nota })
+function cfFind(orderId) { const orders = getOrders(); return { orders, o: orders.find(x => x.id === orderId) } }
+function cfDiff(presup, real) {
+  if (!presup) return ''
+  const d = real - presup, pct = d / presup * 100
+  if (Math.abs(d) < 0.01) return '<span class="muted">igual</span>'
+  const color = d > 0 ? 'var(--red-t)' : 'var(--green-t)'
+  return `<span style="color:${color};font-weight:600;white-space:nowrap">${d > 0 ? '+' : '−'}${usd(Math.abs(d), true)} <span style="font-weight:500">(${d > 0 ? '+' : '−'}${Math.abs(pct).toFixed(1).replace('.', ',')}%)</span></span>`
+}
+
+// Pop-up para registrar lo que realmente se pagó de un concepto.
+let cfPayCtx = null
+function cfMarkPaid(orderId, tipo) {
+  const { o } = cfFind(orderId); if (!o) return
+  const c = cfConcepts(o).find(x => x.tipo === tipo); if (!c) return
+  cfPayCtx = { orderId, tipo, presup: c.presup, pagado: c.pagado }
+  let el = document.getElementById('modal-cf-pay')
+  if (!el) { el = document.createElement('div'); el.id = 'modal-cf-pay'; el.className = 'modal-overlay'; el.onclick = e => { if (e.target === el) cfClosePay() }; document.body.appendChild(el) }
+  const stat = (l, v) => `<div style="flex:1 1 0;min-width:0"><div class="muted" style="font-size:12px">${l}</div><div style="font-size:15px;font-weight:700;margin-top:2px">${v}</div></div>`
+  el.innerHTML = `<div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="cfp-title">
+    <div class="modal-header">
+      <span class="modal-title" id="cfp-title">${esc(o.code)} · ${CF_TYPES[tipo].label}</span>
+      <button type="button" class="modal-close" aria-label="Cerrar" onclick="cfClosePay()">✕</button>
+    </div>
+    <p class="muted" style="margin:0 0 14px">Cargá el monto que figura en el comprobante. Queda registrado para comparar contra lo presupuestado.</p>
+    <div style="display:flex;gap:12px;padding:12px 14px;background:var(--surface2,#F9FAFB);border:1px solid var(--border);border-radius:10px;margin-bottom:16px">
+      ${stat(tipo === 'proveedor' ? 'FOB de la orden' : 'Presupuestado', usd(c.presup, true))}
+      ${stat('Ya pagado', usd(c.pagado, true))}
+      ${stat('Pendiente', usd(c.pend, true))}
+    </div>
+    <div class="form-row mb12">
+      <div class="form-group"><label class="label" for="cfp-monto">Monto pagado (USD)</label>
+        <input class="input mono" type="number" id="cfp-monto" min="0" step="0.01" value="${c.pend.toFixed(2)}" oninput="cfPayPreview()"/></div>
+      <div class="form-group"><label class="label" for="cfp-fecha">Fecha de pago</label>
+        <input class="input" type="date" id="cfp-fecha" value="${todayISO()}"/></div>
+    </div>
+    <div class="form-group mb12"><label class="label" for="cfp-ref">Referencia o nota <span class="muted">(opcional)</span></label>
+      <input class="input" type="text" id="cfp-ref" placeholder="N° de factura, transferencia, despacho…"/></div>
+    <fieldset style="border:0;padding:0;margin:0 0 12px">
+      <legend class="label" style="margin-bottom:6px">¿Con este pago queda saldado?</legend>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:6px 0;cursor:pointer"><input type="radio" name="cfp-tipo" value="final" checked onchange="cfPayPreview()" style="margin-top:3px"/> <span><b>Sí, es el pago final</b><br><span class="muted">El concepto se cierra con el monto real, aunque sea distinto al presupuesto.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:6px 0;cursor:pointer"><input type="radio" name="cfp-tipo" value="parcial" onchange="cfPayPreview()" style="margin-top:3px"/> <span><b>No, es un pago parcial</b><br><span class="muted">Lo que falta sigue apareciendo como pendiente.</span></span></label>
+    </fieldset>
+    <div id="cfp-preview" style="font-size:14px;padding:10px 14px;border-radius:10px;background:var(--blue-bg);margin-bottom:16px" aria-live="polite"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn" onclick="cfClosePay()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="cfSavePay()">Registrar pago</button>
+    </div>
+  </div>`
+  el.classList.add('open')
+  cfPayPreview()
+  setTimeout(() => { const i = document.getElementById('cfp-monto'); if (i) { i.focus(); i.select() } }, 30)
+}
+function cfClosePay() { const el = document.getElementById('modal-cf-pay'); if (el) el.classList.remove('open'); cfPayCtx = null; renderPage() }
+function cfPayPreview() {
+  const box = document.getElementById('cfp-preview'); if (!box || !cfPayCtx) return
+  const monto = Number(document.getElementById('cfp-monto').value) || 0
+  const final = document.querySelector('input[name="cfp-tipo"]:checked')?.value !== 'parcial'
+  const total = cfPayCtx.pagado + monto, presup = cfPayCtx.presup
+  if (final) {
+    const d = total - presup
+    box.innerHTML = presup ? `Total pagado de este concepto: <b>${usd(total, true)}</b> contra ${usd(presup, true)} presupuestado. ${Math.abs(d) < 0.01 ? 'Igual al presupuesto.' : `Diferencia: ${cfDiff(presup, total)}.`}` : `Total pagado de este concepto: <b>${usd(total, true)}</b>.`
+  } else {
+    const resta = toCents(presup - total)
+    box.innerHTML = resta > 0 ? `Quedan <b>${usd(resta, true)}</b> pendientes de este concepto.` : `Con este monto ya se cubre todo lo presupuestado: el concepto se cierra igual.`
   }
-  saveOrders(orders); toast(`${o.code}: pago registrado ✓`); renderPage()
+}
+function cfSavePay() {
+  if (!cfPayCtx) return
+  const monto = Math.round((Number(document.getElementById('cfp-monto').value) || 0) * 100) / 100
+  const fecha = document.getElementById('cfp-fecha').value || todayISO()
+  const ref = document.getElementById('cfp-ref').value.trim()
+  const final = document.querySelector('input[name="cfp-tipo"]:checked')?.value !== 'parcial'
+  if (monto < 0) return alert('El monto no puede ser negativo.')
+  if (!monto && !final) return alert('Cargá el monto que pagaste.')
+  const { orders, o } = cfFind(cfPayCtx.orderId); if (!o) return
+  const tipo = cfPayCtx.tipo
+  if (monto > 0) {
+    if (tipo === 'proveedor') { o.pagos = o.pagos || []; o.pagos.push({ tipo: final ? 'saldo' : 'parcial', fecha, monto, ref, notas: 'Registrado desde Pagos y caja', cf: tipo }) }
+    else { const [cat, concepto] = CF_CAT[tipo]; o.costos = o.costos || []; o.costos.push({ cat, concepto, monto, fecha, nota: ref || 'Registrado desde Pagos y caja', cf: tipo }) }
+  }
+  if (final) { o._cfCierre = o._cfCierre || {}; o._cfCierre[tipo] = { fecha, presupuestado: cfPayCtx.presup, por: currentUser?.email || '' } }
+  const code = o.code
+  saveOrders(orders)
+  cfOpen.add(o.id)
+  toast(`${code}: ${final ? 'pago final registrado' : 'pago parcial registrado'} ✓`)
+  cfClosePay()
+}
+function cfReopen(orderId, tipo) {
+  const { orders, o } = cfFind(orderId); if (!o || !o._cfCierre?.[tipo]) return
+  if (!confirm(`¿Reabrir "${CF_TYPES[tipo].label}" en ${o.code}? Los pagos cargados se mantienen; vuelve a aparecer lo que falte contra el presupuesto.`)) return
+  delete o._cfCierre[tipo]
+  saveOrders(orders); toast(`${o.code}: concepto reabierto`); renderPage()
 }
 function cfChangeDate(orderId, tipo, value) {
   if (!value) return
@@ -5910,54 +6010,142 @@ function cfChangeDate(orderId, tipo, value) {
   trackOrderChange(o, o.estado); saveOrders(orders)
   toast(`${o.code}: ${tipo === 'proveedor' ? 'fin de producción' : 'ETA'} actualizada ✓`); renderPage()
 }
+
+/* ── Pagos y caja: agrupado por orden ── */
+let cfFilter = 'pendientes'
+const cfOpen = new Set()
+function cfToggle(id, open) { if (open) cfOpen.add(id); else cfOpen.delete(id) }
+function setCfFilter(f) { cfFilter = f; renderPage() }
+
 function renderCaja() {
   const items = cashflowItems()
   const cf = cashflowSummary()
   const thisWeek = weekStartISO(todayISO()), lim30 = addDaysISO(todayISO(), 30), lim90 = addDaysISO(todayISO(), 90)
   const sum = a => a.reduce((s, x) => s + x.monto, 0)
-  const venc = items.filter(i => i.fecha && weekStartISO(i.fecha) < thisWeek).sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const isLate = i => i.fecha && weekStartISO(i.fecha) < thisWeek
+  const venc = items.filter(isLate)
   const d30 = items.filter(i => i.fecha && weekStartISO(i.fecha) >= thisWeek && i.fecha <= lim30)
   const d90 = items.filter(i => i.fecha && i.fecha > lim30 && i.fecha <= lim90)
   const later = items.filter(i => !i.fecha || i.fecha > lim90)
+  const sinFecha = items.filter(i => !i.fecha)
   const buckets = [['Atrasado', sum(venc), 'var(--red)'], ['Próximos 30 días', sum(d30), 'var(--blue)'], ['31 a 90 días', sum(d90), 'var(--teal)'], ['Más adelante o sin fecha', sum(later), '#98A2B3']]
   const max = Math.max(1, ...buckets.map(b => b[1]))
   const metric = (l, v, s, color) => `<div class="metric" style="cursor:default"><div class="m-l">${l}</div><div class="m-v" style="${color ? 'color:' + color : ''}">${v}</div><div class="m-s">${s}</div></div>`
-  const upcoming = items.filter(i => i.fecha && weekStartISO(i.fecha) >= thisWeek).sort((a, b) => a.fecha.localeCompare(b.fecha))
-  const sinFecha = items.filter(i => !i.fecha)
-  const rowsOf = (arr, late) => arr.map(i => `<tr style="cursor:default">
-      <td><button type="button" class="code" style="border:0;background:none;padding:0;cursor:pointer" onclick="openDetail('${i.orderId}')">${esc(i.code)}</button><div class="muted">${esc(i.proveedor || '')}</div></td>
-      <td>${CF_TYPES[i.tipo].label}${i.basado === 'tasas generales' && i.tipo !== 'proveedor' ? ' <span class="muted" title="Sin presupuesto: estimado con las tasas generales">(estimado)</span>' : ''}</td>
-      <td style="white-space:nowrap">${i.fecha ? (late ? `<span class="pill red">${shortDate(i.fecha)} · hace ${daysAgo(i.fecha)} d</span>` : shortDate(i.fecha)) : '<span class="pill amber">Sin fecha</span>'}</td>
-      <td class="r" style="font-weight:700;white-space:nowrap">${usd(i.monto, true)}</td>
-      <td class="r" style="white-space:nowrap">
-        <button type="button" class="btn btn-sm" onclick="cfMarkPaid('${i.orderId}','${i.tipo}',${i.monto})">Marcar pagado</button>
-        <label class="sr" for="cfd-${i.orderId}-${i.tipo}">Nueva fecha</label>
-        <input id="cfd-${i.orderId}-${i.tipo}" type="date" class="input" title="${i.tipo === 'proveedor' ? 'Cambia el fin de producción' : 'Cambia la ETA de la orden'}" style="width:auto;min-height:36px;display:inline-block;padding:4px 8px;font-size:13px" onchange="cfChangeDate('${i.orderId}','${i.tipo}',this.value)"/>
-      </td></tr>`).join('')
-  const table = (title, sub, arr, late) => arr.length ? `<section class="box" style="margin-bottom:20px;overflow:hidden">
-      <div class="box-h"><h2>${title}</h2><span class="sub">${sub}</span></div>
-      <div style="overflow-x:auto"><table class="tbl" style="min-width:820px"><thead><tr><th>Orden</th><th>Concepto</th><th>Fecha</th><th class="r">Monto</th><th class="r">Acción</th></tr></thead><tbody>${rowsOf(arr, late)}</tbody></table></div>
-    </section>` : ''
+
+  // Una tarjeta por orden activa, con sus conceptos adentro.
+  const groups = ordersByCompany().filter(o => CF_ACTIVE.includes(o.estado)).map(o => {
+    const cs = cfConcepts(o)
+    const pend = cs.filter(c => c.pend > 0)
+    const fechas = pend.map(c => c.fecha).filter(Boolean).sort()
+    return { o, cs, pend, total: pend.reduce((s, c) => s + c.pend, 0), next: fechas[0] || null, late: pend.some(c => c.fecha && weekStartISO(c.fecha) < thisWeek), sinFecha: pend.some(c => !c.fecha), d30: pend.some(c => c.fecha && weekStartISO(c.fecha) >= thisWeek && c.fecha <= lim30) }
+  }).filter(g => g.cs.length)
+  const F = {
+    pendientes: ['Con pagos pendientes', g => g.pend.length],
+    atrasados: ['Atrasados', g => g.late],
+    d30: ['Próximos 30 días', g => g.d30],
+    sinfecha: ['Sin fecha', g => g.sinFecha],
+    saldadas: ['Todo pagado', g => !g.pend.length],
+    todas: ['Todas', () => true],
+  }
+  if (!F[cfFilter]) cfFilter = 'pendientes'
+  const shown = groups.filter(F[cfFilter][1]).sort((a, b) => (b.late - a.late) || ((a.next || '9999').localeCompare(b.next || '9999')) || (b.total - a.total))
+  const chips = Object.entries(F).map(([k, [l, fn]]) => [k, l, groups.filter(fn).length]).filter(([k, , n]) => n || k === 'pendientes' || k === cfFilter)
+
+  const conceptRow = (o, c) => {
+    const late = c.pend > 0 && c.fecha && weekStartISO(c.fecha) < thisWeek
+    const estado = c.cerrado
+      ? `<span class="pill green">Pagado</span>`
+      : c.pend > 0 && c.pagado > 0 ? `<span class="pill blue">Parcial · faltan ${usd(c.pend)}</span>`
+      : c.fecha ? (late ? `<span class="pill red">Vencía ${shortDate(c.fecha)} · hace ${daysAgo(c.fecha)} d</span>` : `<span class="pill gray">${shortDate(c.fecha)}</span>`) : '<span class="pill amber">Sin fecha</span>'
+    const est = c.basado === 'tasas generales' ? ' <span class="muted" title="Sin presupuesto: estimado con las tasas generales">(estimado)</span>' : ''
+    const acc = c.cerrado
+      ? (c.cierreManual ? `<button type="button" class="btn btn-sm btn-ghost" onclick="cfReopen('${o.id}','${c.tipo}')">Reabrir</button>` : '')
+      : `<button type="button" class="btn btn-sm btn-primary" onclick="cfMarkPaid('${o.id}','${c.tipo}')">Marcar pagado</button>
+         <label class="sr" for="cfd-${o.id}-${c.tipo}">Nueva fecha para ${CF_TYPES[c.tipo].label}</label>
+         <input id="cfd-${o.id}-${c.tipo}" type="date" class="input" title="${c.tipo === 'proveedor' ? 'Cambia el fin de producción' : 'Cambia la ETA de la orden'}" style="width:auto;min-height:36px;display:inline-block;padding:4px 8px;font-size:13px" onchange="cfChangeDate('${o.id}','${c.tipo}',this.value)"/>`
+    return `<tr style="cursor:default">
+      <td style="padding-left:20px;white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CF_TYPES[c.tipo].color};margin-right:8px" aria-hidden="true"></span>${CF_TYPES[c.tipo].label}${est}</td>
+      <td class="r" style="white-space:nowrap">${usd(c.presup, true)}</td>
+      <td class="r" style="white-space:nowrap">${c.pagado ? usd(c.pagado, true) : '<span class="muted">—</span>'}</td>
+      <td class="r">${c.cerrado ? cfDiff(c.presup, c.pagado) : '<span class="muted">—</span>'}</td>
+      <td>${estado}</td>
+      <td class="r" style="white-space:nowrap;padding-right:20px">${acc}</td></tr>`
+  }
+  const groupHtml = g => {
+    const { o, cs } = g
+    const done = cs.filter(c => c.cerrado).length
+    const closed = cs.filter(c => c.cerrado)
+    const pP = closed.reduce((s, c) => s + c.presup, 0), pR = closed.reduce((s, c) => s + c.pagado, 0)
+    const nextPill = !g.pend.length ? '<span class="pill green">Todo pagado</span>'
+      : g.late ? `<span class="pill red">Atrasado</span>`
+      : g.next ? `<span class="pill gray">Próximo: ${shortDate(g.next)}</span>` : '<span class="pill amber">Sin fecha</span>'
+    return `<details class="box cf-group" style="margin-bottom:10px;overflow:hidden" ${cfOpen.has(o.id) ? 'open' : ''} ontoggle="cfToggle('${o.id}',this.open)">
+      <summary style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 20px;cursor:pointer;list-style:none">
+        <span class="cf-caret" aria-hidden="true">›</span>
+        <div style="flex:1 1 220px;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="code" style="font-weight:700">${esc(o.code)}</span><span class="pill gray" style="height:22px;font-size:11px"><span style="width:7px;height:7px;border-radius:50%;background:${STAGE_COLOR[o.estado] || '#98A2B3'}"></span>${S_LABELS[o.estado] || o.estado}</span></div>
+          <div class="muted" style="margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(o.proveedor || '—')}</div>
+        </div>
+        <div style="display:flex;gap:4px" aria-label="${done} de ${cs.length} conceptos pagados" title="${done} de ${cs.length} conceptos pagados">${cs.map(c => `<span style="width:22px;height:6px;border-radius:3px;background:${c.cerrado ? 'var(--green)' : c.pagado > 0 ? 'var(--blue)' : 'var(--border2)'}"></span>`).join('')}</div>
+        <div style="min-width:120px;text-align:right"><div style="font-size:15px;font-weight:700">${g.total ? usd(g.total, true) : '—'}</div><div class="muted" style="font-size:12px">${g.pend.length ? `${g.pend.length} ${plural(g.pend.length, 'pago pendiente', 'pagos pendientes')}` : 'sin pendientes'}</div></div>
+        <div style="min-width:130px;text-align:right">${nextPill}</div>
+      </summary>
+      <div style="overflow-x:auto;border-top:1px solid var(--border)"><table class="tbl" style="min-width:860px">
+        <thead><tr><th style="padding-left:20px">Concepto</th><th class="r">Presupuestado</th><th class="r">Pagado real</th><th class="r">Diferencia</th><th>Estado</th><th class="r" style="padding-right:20px"></th></tr></thead>
+        <tbody>${cs.map(c => conceptRow(o, c)).join('')}
+          ${closed.length ? `<tr style="cursor:default;background:#F9FAFB;font-weight:600"><td style="padding-left:20px">Lo ya cerrado</td><td class="r">${usd(pP, true)}</td><td class="r">${usd(pR, true)}</td><td class="r">${cfDiff(pP, pR)}</td><td colspan="2" style="padding-right:20px"><button type="button" class="btn btn-sm btn-ghost" onclick="openDetail('${o.id}')">Abrir orden</button></td></tr>` : `<tr style="cursor:default"><td colspan="6" style="padding-left:20px"><button type="button" class="btn btn-sm btn-ghost" onclick="openDetail('${o.id}')">Abrir orden</button></td></tr>`}
+        </tbody></table></div>
+    </details>`
+  }
+
+  // Resumen final: lo cerrado con monto real contra lo presupuestado, en todas las órdenes.
+  const resumen = ordersByCompany().map(o => {
+    const cs = cfConcepts(o).filter(c => c.cierreManual && c.tipo !== 'proveedor')
+    if (!cs.length) return null
+    const by = t => cs.find(c => c.tipo === t)
+    const p = cs.reduce((s, c) => s + c.presup, 0), r = cs.reduce((s, c) => s + c.pagado, 0)
+    const last = cs.map(c => (o._cfCierre[c.tipo] || {}).fecha || '').sort().pop()
+    return { o, by, p, r, last }
+  }).filter(Boolean).sort((a, b) => (b.last || '').localeCompare(a.last || ''))
+  const cellCmp = c => c ? `<div style="font-weight:600">${usd(c.pagado, true)}</div><div style="font-size:12px">${cfDiff(c.presup, c.pagado)}</div>` : '<span class="muted">—</span>'
+  const totP = resumen.reduce((s, x) => s + x.p, 0), totR = resumen.reduce((s, x) => s + x.r, 0)
+  const resumenBox = `<section class="box" style="margin-top:24px;overflow:hidden">
+    <div class="box-h"><h2>Presupuestado vs. real</h2><span class="sub">flete, tributos y gastos locales cerrados con su monto real</span></div>
+    ${resumen.length ? `<div style="overflow-x:auto"><table class="tbl" style="min-width:860px">
+      <thead><tr><th style="padding-left:20px">Orden</th><th class="r">Flete</th><th class="r">Tributos</th><th class="r">Gastos locales</th><th class="r">Presupuestado</th><th class="r">Real</th><th class="r" style="padding-right:20px">Diferencia</th></tr></thead>
+      <tbody>${resumen.map(x => `<tr onclick="openDetail('${x.o.id}')">
+        <td style="padding-left:20px"><span class="code">${esc(x.o.code)}</span><div class="muted">${esc(x.o.proveedor || '')}</div></td>
+        <td class="r">${cellCmp(x.by('flete'))}</td><td class="r">${cellCmp(x.by('aduana'))}</td><td class="r">${cellCmp(x.by('locales'))}</td>
+        <td class="r" style="white-space:nowrap">${usd(x.p, true)}</td><td class="r" style="white-space:nowrap;font-weight:700">${usd(x.r, true)}</td><td class="r" style="padding-right:20px">${cfDiff(x.p, x.r)}</td></tr>`).join('')}
+        ${resumen.length > 1 ? `<tr style="cursor:default;background:#F9FAFB;font-weight:700"><td style="padding-left:20px" colspan="4">Total</td><td class="r">${usd(totP, true)}</td><td class="r">${usd(totR, true)}</td><td class="r" style="padding-right:20px">${cfDiff(totP, totR)}</td></tr>` : ''}
+      </tbody></table></div>`
+    : `<p class="muted" style="margin:0;padding:0 20px 20px">Todavía no hay pagos cerrados con monto real. Cuando marques un flete, tributo o gasto local como pagado y cargues lo que pagaste, aparece acá la comparación contra lo presupuestado.</p>`}
+  </section>`
+
   return `
-  <div class="pg-head"><div class="grow"><h1>Pagos y caja</h1><p>Lo que tenés que pagar, cuándo y por qué orden</p></div></div>
+  <style>.cf-group>summary::-webkit-details-marker{display:none}.cf-group .cf-caret{display:inline-block;font-size:20px;line-height:1;color:var(--text3);transition:transform .15s;width:12px}.cf-group[open] .cf-caret{transform:rotate(90deg)}.cf-group>summary:hover{background:#F9FAFB}</style>
+  <div class="pg-head"><div class="grow"><h1>Pagos y caja</h1><p>Lo que tenés que pagar por orden, y cuánto se pagó de verdad</p></div></div>
   <div class="grid-auto" style="margin-bottom:20px">
     ${metric('Atrasado', usd(cf.vencido, true), `${venc.length} ${plural(venc.length, 'pago', 'pagos')} con fecha vencida`, venc.length ? 'var(--red-t)' : '')}
     ${metric('Próximos 30 días', usd(sum(d30), true), `${d30.length} ${plural(d30.length, 'pago', 'pagos')}`)}
     ${metric('Más adelante o sin fecha', usd(sum(later), true), sinFecha.length ? `${sinFecha.length} sin fecha: completá ETAs` : 'todo con fecha')}
     ${metric('Total comprometido', usd(cf.total, true), `${items.length} ${plural(items.length, 'pago', 'pagos')} en ${new Set(items.map(i => i.orderId)).size} órdenes`)}
   </div>
-  ${items.length ? `<section class="box" style="padding:18px 20px;margin-bottom:20px">
+  ${items.length ? `<section class="box" style="padding:18px 20px;margin-bottom:24px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:18px"><h2 style="margin:0;font-size:17px;font-weight:700">Cuándo sale la plata</h2><span class="muted">saldos a proveedores, flete, tributos y gastos locales</span></div>
-    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:end;height:220px;border-bottom:1px solid var(--border2)">
-      ${buckets.map(([l, v, c]) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end"><span style="font-size:13px;font-weight:700">${usd(v)}</span><div style="width:70%;max-width:120px;height:${Math.max(v > 0 ? 4 : 2, Math.round(v / max * 170))}px;background:${v > 0 ? c : 'var(--border)'};border-radius:6px 6px 0 0"></div></div>`).join('')}
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:end;height:200px;border-bottom:1px solid var(--border2)">
+      ${buckets.map(([l, v, c]) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end"><span style="font-size:13px;font-weight:700">${usd(v)}</span><div style="width:70%;max-width:120px;height:${Math.max(v > 0 ? 4 : 2, Math.round(v / max * 150))}px;background:${v > 0 ? c : 'var(--border)'};border-radius:6px 6px 0 0"></div></div>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;padding-top:8px">${buckets.map(([l]) => `<div style="text-align:center;font-size:13px;font-weight:500;color:#344054">${l}</div>`).join('')}</div>
     <p class="muted" style="margin:14px 0 0;font-size:12px">Los tributos incluyen IVA y percepciones que después recuperás como crédito fiscal. Si una orden no tiene ETA, se estima con la salida + 35 días o el fin de producción + 45 días.</p>
   </section>` : ''}
-  ${table('Atrasado', `${venc.length} ${plural(venc.length, 'pago', 'pagos')} · ${usd(sum(venc), true)} · ¿ya se pagó? marcalo; ¿se corrió? cambiá la fecha`, venc, true)}
-  ${table('Próximos pagos', `${upcoming.length} con fecha`, upcoming, false)}
-  ${table('Sin fecha', 'cargá fin de producción o ETA en la orden', sinFecha, false)}
-  <section style="margin-bottom:8px"><h2 style="margin:0 0 10px;font-size:17px;font-weight:700">Saldos con proveedores</h2>${renderPagos(true)}</section>`
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <h2 style="margin:0 8px 0 0;font-size:17px;font-weight:700">Pagos por orden</h2>
+    ${chips.map(([k, l, n]) => `<button type="button" class="chip${cfFilter === k ? ' active' : ''}" aria-pressed="${cfFilter === k}" onclick="setCfFilter('${k}')">${l} <span class="chip-n">${n}</span></button>`).join('')}
+    ${shown.length > 1 ? `<button type="button" class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="${shown.every(g => cfOpen.has(g.o.id)) ? `cfOpen.clear()` : `[${shown.map(g => `'${g.o.id}'`).join(',')}].forEach(id=>cfOpen.add(id))`};renderPage()">${shown.every(g => cfOpen.has(g.o.id)) ? 'Cerrar todas' : 'Abrir todas'}</button>` : ''}
+  </div>
+  ${shown.length ? shown.map(groupHtml).join('') : `<div class="box muted" style="padding:28px;text-align:center">No hay órdenes en este filtro.</div>`}
+  ${resumenBox}`
 }
 
 /* ════════════════════════════════════
