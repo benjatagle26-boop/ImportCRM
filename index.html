@@ -5210,22 +5210,65 @@ const CF_CAT = { flete: ['naviera', 'Flete marítimo'], aduana: ['impuesto', 'Tr
 // Por concepto de una orden: cuánto se presupuestó, cuánto se pagó de verdad, qué falta y si quedó cerrado.
 // Un concepto queda cerrado cuando se pagó todo o cuando se registró el pago final con el monto real
 // (aunque haya sido menos que lo presupuestado).
-function cfConcepts(o) {
+// Ítems de cada concepto, con su monto presupuestado.
+const CF_ITEMS = {
+  proveedor: [['saldo', 'Pago al proveedor']],
+  flete: [['flete', 'Flete internacional']],
+  aduana: [['di', 'Derecho de importación (DI)'], ['te', 'Tasa de estadística'], ['iva', 'IVA importación'], ['iva_ad', 'IVA adicional'], ['ganancias', 'Percepción de Ganancias'], ['iibb', 'Percepción de IIBB']],
+  locales: [['despachante', 'Despachante'], ['thc', 'THC / BL'], ['alma', 'Depósito fiscal / almacenaje'], ['swift', 'SWIFT / transferencia'], ['flete_int', 'Flete interno'], ['banco', 'Gastos bancarios'], ['sim', 'SIM'], ['fee', 'Fee / honorarios']],
+}
+const CF_LEGACY = { flete: { 'Flete marítimo': 'flete' }, aduana: { 'Arancel de importación': 'di', 'IVA importación': 'iva', 'Tasa de estadística': 'te' }, locales: { 'Flete local': 'flete_int' } }
+function cfBudget(o) {
   const cfg = getCalcConfig()
   const fob = Number(o.fob_total) || 0
   const q = quoteOf(o)
   const cd = (!o._valoresReales && (q?.costoDetalle || o._costoDetalle)) || o._estimado?.costoDetalle || null
   // Con valores reales cargados, el presupuesto original es el que quedó guardado en _estimado.
   const fleteEst = Number(o._valoresReales ? (o._estimado?.flete ?? q?.flete ?? o._flete) : (q?.flete ?? o._flete)) || 0
-  let trib, loc, basado
-  if (cd && (cd.total_trib || cd.total_locales)) {
-    trib = Number(cd.total_trib) || 0
-    loc = (Number(cd.total_locales) || 0) + (Number(cd.total_fee) || 0) + (Number(cd.iva_fee) || 0)
-    basado = 'presupuesto'
-  } else {
-    const t = computeLanded(fob, fleteEst, cfg, 'A', true)
-    trib = t.total_trib; loc = t.total_locales; basado = 'tasas generales'
+  const usaCd = !!(cd && (cd.total_trib || cd.total_locales))
+  const src = usaCd ? cd : computeLanded(fob, fleteEst, cfg, 'A', true)
+  const n = k => Number(src[k]) || 0
+  const trib = n('total_trib')
+  const loc = usaCd ? n('total_locales') + n('total_fee') + n('iva_fee') : n('total_locales')
+  // Tributos: el presupuesto guarda cada uno.
+  let tribItems = { di: n('di'), te: n('te'), iva: n('iva'), iva_ad: n('iva_ad'), ganancias: n('ganancias'), iibb: n('iibb') }
+  const ts = Object.values(tribItems).reduce((a, b) => a + b, 0)
+  if (trib > 0 && Math.abs(ts - trib) > 0.5) {
+    // Presupuesto viejo sin el detalle: se reparte el total con las proporciones de las tasas generales.
+    const g = computeLanded(fob, fleteEst, cfg, 'A', true), gs = g.total_trib || 1
+    tribItems = { di: g.di * trib / gs, te: g.te * trib / gs, iva: g.iva * trib / gs, iva_ad: g.iva_ad * trib / gs, ganancias: g.ganancias * trib / gs, iibb: g.iibb * trib / gs }
   }
+  // Gastos locales: si el presupuesto no guarda el detalle, se reparte con los valores de la calculadora.
+  let li
+  if (src.detalle_locales) { const d = src.detalle_locales; li = { despachante: +d.despachante || 0, thc: +d.thc || 0, alma: +d.alma || 0, swift: +d.swift || 0, flete_int: +d.flete_int || 0, banco: +d.banco || 0, sim: +d.sim || 0 } }
+  else {
+    li = { despachante: +cfg.despachante || 0, thc: +cfg.thc_bl || 0, alma: +cfg.almacenaje || 0, swift: +cfg.swift_local || 0, flete_int: +cfg.flete_interno || 0, banco: fob * (+cfg.gasto_banco_ext_pct || 0) / 100 }
+    const s = Object.values(li).reduce((a, b) => a + b, 0), target = n('total_locales')
+    if (s > 0 && target > 0 && Math.abs(s - target) > 0.5) Object.keys(li).forEach(k => li[k] = li[k] * target / s)
+  }
+  li.fee = usaCd ? n('total_fee') + n('iva_fee') : 0
+  return { fob, fleteEst, trib, loc, basado: usaCd ? 'presupuesto' : 'tasas generales', items: { proveedor: { saldo: fob }, flete: { flete: fleteEst }, aduana: tribItems, locales: li } }
+}
+// Lo presupuestado y lo pagado por ítem de un concepto. Los pagos sin ítem (cargados a mano o antes
+// de este cambio) aparecen como una línea aparte con su nombre.
+function cfConceptItems(o, tipo, budgetItems, snap) {
+  const out = CF_ITEMS[tipo].map(([key, label]) => ({ key, label, presup: toCents(snap?.[key] ?? budgetItems[key] ?? 0), pagado: 0 }))
+  const add = (key, label, monto) => { let it = out.find(x => x.key === key); if (!it) { it = { key, label, presup: 0, pagado: 0, extra: true }; out.push(it) } it.pagado = Math.round((it.pagado + (Number(monto) || 0)) * 100) / 100 }
+  if (tipo === 'proveedor') add('saldo', 'Pago al proveedor', totalPagos(o))
+  else (o.costos || []).filter(c => c.cat === CF_CAT[tipo][0]).forEach(c => {
+    if (c.item && CF_ITEMS[tipo].some(i => i[0] === c.item)) return add(c.item, '', c.monto)
+    // Costos cargados a mano en la orden o antes del detalle por ítem.
+    const k = CF_LEGACY[tipo]?.[c.concepto]
+    if (k) return add(k, '', c.monto)
+    if (c.concepto === CF_CAT[tipo][1]) return add('x:sin detalle', 'Pagado sin detalle', c.monto)
+    add('x:' + (c.concepto || 'Otros'), c.concepto || 'Otros', c.monto)
+  })
+  return out.filter(i => i.presup > 0 || i.pagado > 0)
+}
+
+function cfConcepts(o) {
+  const b = cfBudget(o)
+  const { fob, fleteEst, trib, loc, basado } = b
   // Sin ETA: se estima con la salida (ETD + 35 días) o con el fin de producción (+ 45 días).
   const etaish = o.eta || (o.etd ? addDaysISO(o.etd, 35) : o.fin_prod ? addDaysISO(o.fin_prod, 45) : null)
   const cierre = o._cfCierre || {}
@@ -5242,7 +5285,8 @@ function cfConcepts(o) {
     const cerrado = !!cierre[tipo] || (presup > 0 && toCents(presup - pagadoC) === 0)
     // Pendientes redondeados a centavos: un resto menor a un centavo cuenta como pagado.
     const pend = cerrado ? 0 : toCents(presup - pagadoC)
-    return { tipo, presup, pagado: pagadoC, pend, cerrado, cierreManual: !!cierre[tipo], fecha, basado: tipo === 'proveedor' ? 'fob' : basado }
+    const items = cfConceptItems(o, tipo, b.items[tipo], cierre[tipo]?.items)
+    return { tipo, presup, pagado: pagadoC, pend, cerrado, cierreManual: !!cierre[tipo], fecha, basado: tipo === 'proveedor' ? 'fob' : basado, items }
   }).filter(c => c.presup > 0 || c.pagado > 0)
 }
 
@@ -5924,32 +5968,46 @@ let cfPayCtx = null
 function cfMarkPaid(orderId, tipo) {
   const { o } = cfFind(orderId); if (!o) return
   const c = cfConcepts(o).find(x => x.tipo === tipo); if (!c) return
-  cfPayCtx = { orderId, tipo, presup: c.presup, pagado: c.pagado }
+  // Lo pendiente por ítem; si hay pagos viejos sin ítem, se ajusta para no pasarse del pendiente del concepto.
+  const its = c.items.filter(i => !i.extra || tipo === 'proveedor')
+  const pendIt = its.map(i => Math.max(0, i.presup - i.pagado))
+  const sumPend = pendIt.reduce((a, b) => a + b, 0)
+  const k = sumPend > c.pend && sumPend > 0 ? c.pend / sumPend : 1
+  cfPayCtx = { orderId, tipo, presup: c.presup, pagado: c.pagado, items: its.map((i, n) => ({ key: i.key, label: i.label, presup: i.presup, pagado: i.pagado, pref: Math.round(pendIt[n] * k * 100) / 100 })), extras: 0 }
   let el = document.getElementById('modal-cf-pay')
   if (!el) { el = document.createElement('div'); el.id = 'modal-cf-pay'; el.className = 'modal-overlay'; el.onclick = e => { if (e.target === el) cfClosePay() }; document.body.appendChild(el) }
   const stat = (l, v) => `<div style="flex:1 1 0;min-width:0"><div class="muted" style="font-size:12px">${l}</div><div style="font-size:15px;font-weight:700;margin-top:2px">${v}</div></div>`
-  el.innerHTML = `<div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="cfp-title">
+  const single = tipo === 'proveedor'
+  const rows = cfPayCtx.items.map((i, n) => `<tr>
+      <td style="padding:6px 8px 6px 0"><label for="cfp-i${n}" style="font-size:14px">${esc(i.label)}</label></td>
+      <td class="r muted" style="padding:6px 8px;white-space:nowrap">${i.presup ? usd(i.presup, true) : '—'}</td>
+      <td class="r muted" style="padding:6px 8px;white-space:nowrap">${i.pagado ? usd(i.pagado, true) : '—'}</td>
+      <td style="padding:6px 0;width:130px"><input class="input mono cfp-in" type="number" id="cfp-i${n}" data-n="${n}" min="0" step="0.01" value="${i.pref ? i.pref.toFixed(2) : ''}" placeholder="0,00" oninput="cfPayPreview()" style="text-align:right;min-height:36px;padding:4px 8px"/></td></tr>`).join('')
+  el.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="cfp-title" style="max-width:640px">
     <div class="modal-header">
       <span class="modal-title" id="cfp-title">${esc(o.code)} · ${CF_TYPES[tipo].label}</span>
       <button type="button" class="modal-close" aria-label="Cerrar" onclick="cfClosePay()">✕</button>
     </div>
-    <p class="muted" style="margin:0 0 14px">Cargá el monto que figura en el comprobante. Queda registrado para comparar contra lo presupuestado.</p>
-    <div style="display:flex;gap:12px;padding:12px 14px;background:var(--surface2,#F9FAFB);border:1px solid var(--border);border-radius:10px;margin-bottom:16px">
-      ${stat(tipo === 'proveedor' ? 'FOB de la orden' : 'Presupuestado', usd(c.presup, true))}
+    <p class="muted" style="margin:0 0 14px">${single ? 'Cargá el monto que figura en el comprobante.' : 'Cargá lo que pagaste de cada ítem según los comprobantes. Dejá vacío lo que todavía no pagaste.'} Queda registrado para comparar contra lo presupuestado.</p>
+    <div style="display:flex;gap:12px;padding:12px 14px;background:#F9FAFB;border:1px solid var(--border);border-radius:10px;margin-bottom:14px">
+      ${stat(single ? 'FOB de la orden' : 'Presupuestado', usd(c.presup, true))}
       ${stat('Ya pagado', usd(c.pagado, true))}
       ${stat('Pendiente', usd(c.pend, true))}
     </div>
-    <div class="form-row mb12">
-      <div class="form-group"><label class="label" for="cfp-monto">Monto pagado (USD)</label>
-        <input class="input mono" type="number" id="cfp-monto" min="0" step="0.01" value="${c.pend.toFixed(2)}" oninput="cfPayPreview()"/></div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead><tr style="font-size:12px;color:var(--text2);text-align:left"><th style="padding:0 8px 6px 0;font-weight:600">Ítem</th><th class="r" style="padding:0 8px 6px;font-weight:600">Presupuestado</th><th class="r" style="padding:0 8px 6px;font-weight:600">Ya pagado</th><th class="r" style="padding:0 0 6px;font-weight:600">Pagado ahora</th></tr></thead>
+      <tbody id="cfp-rows">${rows}</tbody>
+    </table></div>
+    ${single ? '' : `<button type="button" class="btn btn-sm btn-ghost" style="margin:6px 0 4px;color:var(--blue)" onclick="cfAddExtra()">+ Agregar otro gasto</button>`}
+    <div class="form-row" style="margin:12px 0">
       <div class="form-group"><label class="label" for="cfp-fecha">Fecha de pago</label>
         <input class="input" type="date" id="cfp-fecha" value="${todayISO()}"/></div>
+      <div class="form-group"><label class="label" for="cfp-ref">Referencia <span class="muted">(opcional)</span></label>
+        <input class="input" type="text" id="cfp-ref" placeholder="Factura, transferencia, despacho…"/></div>
     </div>
-    <div class="form-group mb12"><label class="label" for="cfp-ref">Referencia o nota <span class="muted">(opcional)</span></label>
-      <input class="input" type="text" id="cfp-ref" placeholder="N° de factura, transferencia, despacho…"/></div>
     <fieldset style="border:0;padding:0;margin:0 0 12px">
       <legend class="label" style="margin-bottom:6px">¿Con este pago queda saldado?</legend>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:6px 0;cursor:pointer"><input type="radio" name="cfp-tipo" value="final" checked onchange="cfPayPreview()" style="margin-top:3px"/> <span><b>Sí, es el pago final</b><br><span class="muted">El concepto se cierra con el monto real, aunque sea distinto al presupuesto.</span></span></label>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:6px 0;cursor:pointer"><input type="radio" name="cfp-tipo" value="final" checked onchange="cfPayPreview()" style="margin-top:3px"/> <span><b>Sí, es el pago final</b><br><span class="muted">${CF_TYPES[tipo].label} se cierra con el monto real, aunque sea distinto al presupuesto.</span></span></label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:6px 0;cursor:pointer"><input type="radio" name="cfp-tipo" value="parcial" onchange="cfPayPreview()" style="margin-top:3px"/> <span><b>No, es un pago parcial</b><br><span class="muted">Lo que falta sigue apareciendo como pendiente.</span></span></label>
     </fieldset>
     <div id="cfp-preview" style="font-size:14px;padding:10px 14px;border-radius:10px;background:var(--blue-bg);margin-bottom:16px" aria-live="polite"></div>
@@ -5960,40 +6018,60 @@ function cfMarkPaid(orderId, tipo) {
   </div>`
   el.classList.add('open')
   cfPayPreview()
-  setTimeout(() => { const i = document.getElementById('cfp-monto'); if (i) { i.focus(); i.select() } }, 30)
+  setTimeout(() => { const i = document.querySelector('#cfp-rows input'); if (i) { i.focus(); i.select() } }, 30)
+}
+function cfAddExtra() {
+  if (!cfPayCtx) return
+  const n = cfPayCtx.extras++
+  const tr = document.createElement('tr')
+  tr.innerHTML = `<td style="padding:6px 8px 6px 0" colspan="3"><label class="sr" for="cfp-xn${n}">Nombre del gasto</label><input class="input cfp-xname" id="cfp-xn${n}" type="text" placeholder="Nombre del gasto (ej.: multa, verificación, estadía)" style="min-height:36px;padding:4px 8px"/></td>
+    <td style="padding:6px 0;width:130px"><label class="sr" for="cfp-x${n}">Monto</label><input class="input mono cfp-xin" type="number" id="cfp-x${n}" min="0" step="0.01" placeholder="0,00" oninput="cfPayPreview()" style="text-align:right;min-height:36px;padding:4px 8px"/></td>`
+  document.getElementById('cfp-rows').appendChild(tr)
+  tr.querySelector('input').focus()
+}
+function cfPayLines() {
+  const lines = []
+  document.querySelectorAll('#cfp-rows .cfp-in').forEach(inp => { const v = Math.round((Number(inp.value) || 0) * 100) / 100; const it = cfPayCtx.items[+inp.dataset.n]; if (v > 0) lines.push({ item: it.key.startsWith('x:') ? null : it.key, label: it.label, monto: v }) })
+  document.querySelectorAll('#cfp-rows .cfp-xin').forEach(inp => { const v = Math.round((Number(inp.value) || 0) * 100) / 100; const name = inp.closest('tr').querySelector('.cfp-xname').value.trim(); if (v > 0) lines.push({ item: null, label: name || 'Otro gasto', monto: v }) })
+  return lines
 }
 function cfClosePay() { const el = document.getElementById('modal-cf-pay'); if (el) el.classList.remove('open'); cfPayCtx = null; renderPage() }
 function cfPayPreview() {
   const box = document.getElementById('cfp-preview'); if (!box || !cfPayCtx) return
-  const monto = Number(document.getElementById('cfp-monto').value) || 0
+  const monto = cfPayLines().reduce((s, l) => s + l.monto, 0)
   const final = document.querySelector('input[name="cfp-tipo"]:checked')?.value !== 'parcial'
   const total = cfPayCtx.pagado + monto, presup = cfPayCtx.presup
+  const ahora = `Pagás ahora <b>${usd(monto, true)}</b>. `
   if (final) {
     const d = total - presup
-    box.innerHTML = presup ? `Total pagado de este concepto: <b>${usd(total, true)}</b> contra ${usd(presup, true)} presupuestado. ${Math.abs(d) < 0.01 ? 'Igual al presupuesto.' : `Diferencia: ${cfDiff(presup, total)}.`}` : `Total pagado de este concepto: <b>${usd(total, true)}</b>.`
+    box.innerHTML = ahora + (presup ? `Total del concepto: <b>${usd(total, true)}</b> contra ${usd(presup, true)} presupuestado. ${Math.abs(d) < 0.01 ? 'Igual al presupuesto.' : `Diferencia: ${cfDiff(presup, total)}.`}` : `Total del concepto: <b>${usd(total, true)}</b>.`)
   } else {
     const resta = toCents(presup - total)
-    box.innerHTML = resta > 0 ? `Quedan <b>${usd(resta, true)}</b> pendientes de este concepto.` : `Con este monto ya se cubre todo lo presupuestado: el concepto se cierra igual.`
+    box.innerHTML = ahora + (resta > 0 ? `Quedan <b>${usd(resta, true)}</b> pendientes.` : `Con esto ya se cubre todo lo presupuestado: el concepto se cierra igual.`)
   }
 }
 function cfSavePay() {
   if (!cfPayCtx) return
-  const monto = Math.round((Number(document.getElementById('cfp-monto').value) || 0) * 100) / 100
+  const lines = cfPayLines()
   const fecha = document.getElementById('cfp-fecha').value || todayISO()
   const ref = document.getElementById('cfp-ref').value.trim()
   const final = document.querySelector('input[name="cfp-tipo"]:checked')?.value !== 'parcial'
-  if (monto < 0) return alert('El monto no puede ser negativo.')
-  if (!monto && !final) return alert('Cargá el monto que pagaste.')
+  if (!lines.length && !final) return alert('Cargá al menos un monto.')
+  if (!lines.length && !confirm('No cargaste ningún monto. ¿Cerrar el concepto igual, como pagado con lo que ya estaba registrado?')) return
   const { orders, o } = cfFind(cfPayCtx.orderId); if (!o) return
   const tipo = cfPayCtx.tipo
-  if (monto > 0) {
-    if (tipo === 'proveedor') { o.pagos = o.pagos || []; o.pagos.push({ tipo: final ? 'saldo' : 'parcial', fecha, monto, ref, notas: 'Registrado desde Pagos y caja', cf: tipo }) }
-    else { const [cat, concepto] = CF_CAT[tipo]; o.costos = o.costos || []; o.costos.push({ cat, concepto, monto, fecha, nota: ref || 'Registrado desde Pagos y caja', cf: tipo }) }
+  lines.forEach(l => {
+    if (tipo === 'proveedor') { o.pagos = o.pagos || []; o.pagos.push({ tipo: final ? 'saldo' : 'parcial', fecha, monto: l.monto, ref, notas: 'Registrado desde Pagos y caja', cf: tipo }) }
+    else { o.costos = o.costos || []; o.costos.push({ cat: CF_CAT[tipo][0], concepto: l.label, monto: l.monto, fecha, nota: ref || 'Registrado desde Pagos y caja', cf: tipo, item: l.item }) }
+  })
+  if (final) {
+    // Se guarda el presupuesto de cada ítem tal como estaba al cerrar, para la comparación final.
+    const items = {}; cfPayCtx.items.forEach(i => { if (!i.key.startsWith('x:') && i.presup) items[i.key] = i.presup })
+    o._cfCierre = o._cfCierre || {}; o._cfCierre[tipo] = { fecha, presupuestado: cfPayCtx.presup, items, por: currentUser?.email || '' }
   }
-  if (final) { o._cfCierre = o._cfCierre || {}; o._cfCierre[tipo] = { fecha, presupuestado: cfPayCtx.presup, por: currentUser?.email || '' } }
   const code = o.code
   saveOrders(orders)
-  cfOpen.add(o.id)
+  cfOpen.add(o.id); cfItemOpen.add(o.id + ':' + tipo)
   toast(`${code}: ${final ? 'pago final registrado' : 'pago parcial registrado'} ✓`)
   cfClosePay()
 }
@@ -6014,6 +6092,8 @@ function cfChangeDate(orderId, tipo, value) {
 /* ── Pagos y caja: agrupado por orden ── */
 let cfFilter = 'pendientes'
 const cfOpen = new Set()
+const cfItemOpen = new Set()
+function cfItemToggle(k) { if (cfItemOpen.has(k)) cfItemOpen.delete(k); else cfItemOpen.add(k); renderPage() }
 function cfToggle(id, open) { if (open) cfOpen.add(id); else cfOpen.delete(id) }
 function setCfFilter(f) { cfFilter = f; renderPage() }
 
@@ -6063,13 +6143,24 @@ function renderCaja() {
       : `<button type="button" class="btn btn-sm btn-primary" onclick="cfMarkPaid('${o.id}','${c.tipo}')">Marcar pagado</button>
          <label class="sr" for="cfd-${o.id}-${c.tipo}">Nueva fecha para ${CF_TYPES[c.tipo].label}</label>
          <input id="cfd-${o.id}-${c.tipo}" type="date" class="input" title="${c.tipo === 'proveedor' ? 'Cambia el fin de producción' : 'Cambia la ETA de la orden'}" style="width:auto;min-height:36px;display:inline-block;padding:4px 8px;font-size:13px" onchange="cfChangeDate('${o.id}','${c.tipo}',this.value)"/>`
+    const ik = o.id + ":" + c.tipo, hasItems = c.items.length > 1 || c.items.some(i => i.extra), open = hasItems && cfItemOpen.has(ik)
+    const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CF_TYPES[c.tipo].color};margin-right:8px" aria-hidden="true"></span>`
+    const label = hasItems
+      ? `<button type="button" aria-expanded="${open}" onclick="cfItemToggle('${ik}')" style="border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;align-items:center">${dot}${CF_TYPES[c.tipo].label}<span class="muted" style="margin-left:6px;font-size:12px">${open ? "▾ ocultar detalle" : "▸ ver " + c.items.length + " ítems"}</span></button>`
+      : dot + CF_TYPES[c.tipo].label
+    const sub = open ? c.items.map(i => `<tr style="cursor:default;background:#FCFCFD;font-size:13px">
+      <td style="padding:7px 12px 7px 44px;color:#344054">${esc(i.label)}${i.extra ? ' <span class="pill gray" style="height:20px;font-size:11px;margin-left:4px">extra</span>' : ""}</td>
+      <td class="r" style="white-space:nowrap;color:#344054">${i.presup ? usd(i.presup, true) : '<span class="muted">—</span>'}</td>
+      <td class="r" style="white-space:nowrap;color:#344054">${i.pagado ? usd(i.pagado, true) : '<span class="muted">—</span>'}</td>
+      <td class="r">${(c.cerrado || i.pagado) && i.presup ? cfDiff(i.presup, i.pagado) : i.pagado && !i.presup ? '<span class="muted">sin presupuesto</span>' : '<span class="muted">—</span>'}</td>
+      <td colspan="2"></td></tr>`).join("") : ""
     return `<tr style="cursor:default">
-      <td style="padding-left:20px;white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CF_TYPES[c.tipo].color};margin-right:8px" aria-hidden="true"></span>${CF_TYPES[c.tipo].label}${est}</td>
+      <td style="padding-left:20px;white-space:nowrap">${label}${est}</td>
       <td class="r" style="white-space:nowrap">${usd(c.presup, true)}</td>
       <td class="r" style="white-space:nowrap">${c.pagado ? usd(c.pagado, true) : '<span class="muted">—</span>'}</td>
       <td class="r">${c.cerrado ? cfDiff(c.presup, c.pagado) : '<span class="muted">—</span>'}</td>
       <td>${estado}</td>
-      <td class="r" style="white-space:nowrap;padding-right:20px">${acc}</td></tr>`
+      <td class="r" style="white-space:nowrap;padding-right:20px">${acc}</td></tr>${sub}`
   }
   const groupHtml = g => {
     const { o, cs } = g
@@ -6105,10 +6196,29 @@ function renderCaja() {
     const by = t => cs.find(c => c.tipo === t)
     const p = cs.reduce((s, c) => s + c.presup, 0), r = cs.reduce((s, c) => s + c.pagado, 0)
     const last = cs.map(c => (o._cfCierre[c.tipo] || {}).fecha || '').sort().pop()
-    return { o, by, p, r, last }
+    return { o, cs, by, p, r, last }
   }).filter(Boolean).sort((a, b) => (b.last || '').localeCompare(a.last || ''))
   const cellCmp = c => c ? `<div style="font-weight:600">${usd(c.pagado, true)}</div><div style="font-size:12px">${cfDiff(c.presup, c.pagado)}</div>` : '<span class="muted">—</span>'
   const totP = resumen.reduce((s, x) => s + x.p, 0), totR = resumen.reduce((s, x) => s + x.r, 0)
+  // Por ítem, sumando todas las órdenes cerradas: dónde se va el presupuesto.
+  const agg = new Map()
+  // Los conceptos pagados de una sola vez sin detalle (antes de este cambio) no se pueden repartir por ítem.
+  const sinDet = c => c.items.some(i => i.key === "x:sin detalle")
+  const nSinDet = resumen.reduce((n, x) => n + x.cs.filter(sinDet).length, 0)
+  resumen.forEach(x => x.cs.filter(c => !sinDet(c)).forEach(c => c.items.forEach(i => {
+    const k = c.tipo + "|" + (i.extra ? "x:" + i.label.toLowerCase() : i.key)
+    const a = agg.get(k) || { tipo: c.tipo, label: i.label, presup: 0, real: 0, n: 0 }
+    a.presup += i.presup; a.real += i.pagado; a.n++; agg.set(k, a)
+  })))
+  const aggRows = [...agg.values()].filter(a => a.presup || a.real).sort((a, b) => Object.keys(CF_TYPES).indexOf(a.tipo) - Object.keys(CF_TYPES).indexOf(b.tipo) || Math.abs(b.real - b.presup) - Math.abs(a.real - a.presup))
+  const itemsBox = aggRows.length ? `<section class="box" style="margin-top:16px;overflow:hidden">
+    <div class="box-h"><h2>Por ítem</h2><span class="sub">suma de las órdenes de arriba · ordenado por la mayor diferencia${nSinDet ? ` · no incluye ${nSinDet} ${plural(nSinDet, "concepto pagado", "conceptos pagados")} sin detalle` : ""}</span></div>
+    <div style="overflow-x:auto"><table class="tbl" style="min-width:700px">
+      <thead><tr><th style="padding-left:20px">Ítem</th><th>Concepto</th><th class="r">Órdenes</th><th class="r">Presupuestado</th><th class="r">Real</th><th class="r" style="padding-right:20px">Diferencia</th></tr></thead>
+      <tbody>${aggRows.map(a => `<tr style="cursor:default"><td style="padding-left:20px">${esc(a.label)}</td><td class="muted">${CF_TYPES[a.tipo].label}</td><td class="r">${a.n}</td>
+        <td class="r" style="white-space:nowrap">${a.presup ? usd(a.presup, true) : '<span class="muted">—</span>'}</td><td class="r" style="white-space:nowrap;font-weight:600">${usd(a.real, true)}</td>
+        <td class="r" style="padding-right:20px">${a.presup ? cfDiff(a.presup, a.real) : '<span class="muted">sin presupuesto</span>'}</td></tr>`).join("")}</tbody></table></div>
+  </section>` : ""
   const resumenBox = `<section class="box" style="margin-top:24px;overflow:hidden">
     <div class="box-h"><h2>Presupuestado vs. real</h2><span class="sub">flete, tributos y gastos locales cerrados con su monto real</span></div>
     ${resumen.length ? `<div style="overflow-x:auto"><table class="tbl" style="min-width:860px">
@@ -6145,7 +6255,7 @@ function renderCaja() {
     ${shown.length > 1 ? `<button type="button" class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="${shown.every(g => cfOpen.has(g.o.id)) ? `cfOpen.clear()` : `[${shown.map(g => `'${g.o.id}'`).join(',')}].forEach(id=>cfOpen.add(id))`};renderPage()">${shown.every(g => cfOpen.has(g.o.id)) ? 'Cerrar todas' : 'Abrir todas'}</button>` : ''}
   </div>
   ${shown.length ? shown.map(groupHtml).join('') : `<div class="box muted" style="padding:28px;text-align:center">No hay órdenes en este filtro.</div>`}
-  ${resumenBox}`
+  ${resumenBox}${itemsBox}`
 }
 
 /* ════════════════════════════════════
