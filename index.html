@@ -5242,8 +5242,13 @@ function cfBudget(o) {
   let li
   if (src.detalle_locales) { const d = src.detalle_locales; li = { despachante: +d.despachante || 0, thc: +d.thc || 0, alma: +d.alma || 0, swift: +d.swift || 0, flete_int: +d.flete_int || 0, banco: +d.banco || 0, sim: +d.sim || 0 } }
   else {
-    li = { despachante: +cfg.despachante || 0, thc: +cfg.thc_bl || 0, alma: +cfg.almacenaje || 0, swift: +cfg.swift_local || 0, flete_int: +cfg.flete_interno || 0, banco: fob * (+cfg.gasto_banco_ext_pct || 0) / 100 }
-    const s = Object.values(li).reduce((a, b) => a + b, 0), target = n('total_locales')
+    const fromCfg = c => ({ despachante: +c.despachante || 0, thc: +c.thc_bl || 0, alma: +c.almacenaje || 0, swift: +c.swift_local || 0, flete_int: +c.flete_interno || 0, banco: fob * (+c.gasto_banco_ext_pct || 0) / 100 })
+    const tot = o => Object.values(o).reduce((a, b) => a + b, 0)
+    li = fromCfg(cfg)
+    const target = n('total_locales')
+    // Si la calculadora tiene los gastos en 0, se usan los valores por defecto solo para repartir el total.
+    if (target > 0 && tot(li) === 0) li = fromCfg(CALC_DEFAULTS)
+    const s = tot(li)
     if (s > 0 && target > 0 && Math.abs(s - target) > 0.5) Object.keys(li).forEach(k => li[k] = li[k] * target / s)
   }
   li.fee = usaCd ? n('total_fee') + n('iva_fee') : 0
